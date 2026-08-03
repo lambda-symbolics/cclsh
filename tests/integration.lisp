@@ -1194,6 +1194,54 @@ false
      "saved image has no portable QL:QUICKLOAD: ~a"
      (integration-tail output))))
 
+(defun integration-check-lazy-quicklisp-registry ()
+  "Require packaged setup to defer and preserve ASDF source discovery."
+  (let* ((system-name "cclsh-lazy-registry-probe")
+         (asd
+           (integration-path
+            (format nil "common-lisp/~a/~a.asd"
+                    system-name system-name))))
+    (integration-write-file
+     asd
+     (format nil "(asdf:defsystem ~s)~%" system-name))
+    (let* ((result
+             (integration-run
+              (format
+               nil
+               "(let* ((parameter~%
+                          '(:source-registry~%
+                            :ignore-inherited-configuration))~%
+                        (initially-lazy~%
+                          (and~%
+                           (not~%
+                            (asdf/source-registry:source-registry-initialized-p))~%
+                           (null asdf:*source-registry-parameter*))))~%
+                  (asdf:initialize-source-registry parameter)~%
+                  (let ((setup-result~%
+                          (cclsh::quicklisp-packaged-setup))~%
+                        (setup-preserved~%
+                          (and~%
+                           (asdf/source-registry:source-registry-initialized-p)~%
+                           (equal parameter~%
+                                  asdf:*source-registry-parameter*))))~%
+                    (setf asdf:*source-registry-parameter* nil)~%
+                    (asdf:clear-source-registry)~%
+                    (let ((discovered~%
+                            (asdf:find-system ~s nil)))~%
+                      (format t~%
+                              \"__LAZY_QUICKLISP__~~s:~~s:~~s:~~s__~~%\"~%
+                              initially-lazy~%
+                              setup-result~%
+                              setup-preserved~%
+                              (and discovered t)))))"
+               system-name)))
+           (output (direct-result-output result)))
+      (integration-require-success result "lazy Quicklisp registry")
+      (integration-ensure
+       (integration-contains-p "__LAZY_QUICKLISP__T:T:T:T__" output)
+       "packaged setup eagerly rebuilt or disturbed ASDF discovery: ~a"
+       (integration-tail output)))))
+
 (defun integration-check-baked-clinedi ()
   "Require the saved image to contain pinned, working editor dependencies."
   (let* ((result
@@ -2766,6 +2814,8 @@ false
                         #'integration-check-package-environment)
       (integration-test "Quicklisp baked into saved image"
                         #'integration-check-baked-quicklisp)
+      (integration-test "lazy packaged Quicklisp source registry"
+                        #'integration-check-lazy-quicklisp-registry)
       (integration-test "editor dependencies baked into saved image"
                         #'integration-check-baked-clinedi)
       (integration-test "zoxide directory integration"

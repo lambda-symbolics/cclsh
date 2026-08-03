@@ -644,6 +644,10 @@ scripts run. The embedded template contains only the Quicklisp client and
 distribution metadata, never the builder's local init, configuration, caches
 or downloaded systems.
 
+ASDF source-registry discovery is lazy. Starting an ordinary shell does not
+recursively scan local project trees; the first ASDF system lookup performs
+the configured discovery, and later lookups reuse it.
+
 By convention, cclsh scripts are named =NAME.sh.lisp=. This is the canonical
 compound suffix, not a runtime requirement; extensionless scripts and existing
 names continue to run. The final =.lisp= keeps the file recognizable to Lisp

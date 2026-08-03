@@ -426,7 +426,9 @@ ${XDG_DATA_HOME:-$HOME/.local/share}/cclsh/quicklisp. Override it with
 CCLSH_QUICKLISP_HOME. Existing overrides must contain setup.lisp; invalid or
 unwritable targets are reported and refused. Interactive and configured
 sessions load local-init files, while plain commands, scripts and safe mode do
-not. The flake does not edit /etc/shells or run chsh.
+not. ASDF source-registry discovery remains lazy, so the first system lookup
+may scan configured project trees but ordinary shell startup does not. The
+flake does not edit /etc/shells or run chsh.
 
 Source checks can use stock CCL. For a standalone saved image, select the exact
 downstream CCL revision:

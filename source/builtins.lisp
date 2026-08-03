@@ -217,7 +217,11 @@
     (setf asdf:*user-cache*
           (uiop:xdg-cache-home "common-lisp" ':implementation))
     (asdf:initialize-output-translations nil)
-    (asdf:initialize-source-registry nil)
+    ;; The default ASDF registry recursively searches ~/common-lisp. Leave
+    ;; that work until the first system lookup instead of delaying every
+    ;; shell startup.
+    (setf asdf:*source-registry-parameter* nil)
+    (asdf:clear-source-registry)
     t))
 
 (defun quicklisp--select-packaged-home ()
@@ -249,10 +253,10 @@
   "Prepare writable Quicklisp state for a binary package."
   (when (and (quicklisp--packaged-p)
              (find-package '#:quicklisp))
+    (when *packaged-quicklisp-home*
+      (return-from quicklisp-packaged-setup t))
     (handler-case
-        (let* ((home
-                 (or *packaged-quicklisp-home*
-                     (quicklisp--select-packaged-home))))
+        (let ((home (quicklisp--select-packaged-home)))
           (unless (quicklisp--rebase home)
             (error "loaded Quicklisp cannot be rebased"))
           (setf *packaged-quicklisp-home* home
