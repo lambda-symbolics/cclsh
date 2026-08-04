@@ -1,0 +1,18 @@
+#!/bin/sh
+set -eu
+
+repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+temporary=$(mktemp "$repo/.cclsh-fast.XXXXXX")
+cleanup()
+{
+    rm -f -- "$temporary"
+}
+trap cleanup 0
+trap 'exit 129' 1
+trap 'exit 130' 2
+trap 'exit 143' 15
+
+"${CC:-cc}" -std=c11 -Wall -Wextra -Werror -O2 \
+    "$repo/launcher/cclsh-fast.c" -o "$temporary" -lutil
+chmod 755 "$temporary"
+mv -f -- "$temporary" "$repo/cclsh-fast"

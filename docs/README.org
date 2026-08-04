@@ -8,6 +8,8 @@
   custom commands, job control, completion, configuration and scripting.
 - [[file:../examples/startup.lisp][Example startup file]] is a safe base for
   =~/.config/cclsh/startup.lisp=.
+- [[file:installation.org::*Experimental prewarmed launcher][Prewarmed launcher]]
+  documents the opt-in daemon, direct fallback and terminal limits.
 
 A concise built-in manual is available inside cclsh with =help=, or from
 another shell with =cclsh help= and =cclsh help SECTION=.

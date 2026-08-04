@@ -59,6 +59,21 @@
                :code (ccl::get-errno)))))
   text)
 
+(defun environment--replace-exact (bindings)
+  "Replace the libc environment with string BINDINGS.
+BINDINGS contains (NAME . VALUE) pairs and the environment lock remains held
+from CLEARENV through the last SETENV call, so CCLSH subprocess snapshots
+cannot observe a partially replaced environment."
+  (ccl:with-lock-grabbed (*environment-lock*)
+    (unless (zerop (external-call "clearenv" :int))
+      (error 'environment-error
+             :operation "clear"
+             :name "environment"
+             :code (ccl::get-errno)))
+    (dolist (binding bindings)
+      (environment--set-string (car binding) (cdr binding))))
+  (values))
+
 (defun environment--package-name ()
   "Return the canonical name of the current package, or an empty string."
   (or (package-name *package*) ""))

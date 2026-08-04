@@ -102,3 +102,4 @@ fi
          (ccl:quit 1)))'
 
 tests/installed-image.sh
+tests/fast-launcher.sh

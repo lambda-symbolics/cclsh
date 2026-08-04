@@ -393,16 +393,35 @@
    stable invocation path, or the resolved running binary as fallback,
    so $SHELL callers land back in cclsh. A REPL session through MAIN
    leaves SHELL alone."
-  (with-terminal-control-signals
-    (handler-case
+  (let ((worker-descriptor (getenv +prewarm-worker-fd-variable+))
+        (arguments (rest *command-line-argument-list*)))
+    (if (and worker-descriptor
+             (equal arguments (list +prewarm-worker-argument+)))
         (progn
-          (let ((executable
-                  (or (shell--invocation-path)
-                      (shell--executable-path))))
-            (when executable
-              (setenv "SHELL" executable)))
-          (shell--process-arguments (rest *command-line-argument-list*))
-          (main))
-      (serious-condition (condition)
-        (dispatch-report-error condition)
-        (shell-quit 70)))))
+          (handler-case
+              (prewarm-worker-lease worker-descriptor)
+            (serious-condition (condition)
+              (declare (ignore condition))
+              (prewarm--hard-exit)))
+          (setf ccl:*command-line-argument-list*
+                (list (first ccl:*command-line-argument-list*))
+                ccl:*unprocessed-command-line-arguments* nil)
+          (with-terminal-control-signals
+            (handler-case
+                (main)
+              (serious-condition (condition)
+                (dispatch-report-error condition)
+                (shell-quit 70)))))
+        (with-terminal-control-signals
+          (handler-case
+              (progn
+                (let ((executable
+                        (or (shell--invocation-path)
+                            (shell--executable-path))))
+                  (when executable
+                    (setenv "SHELL" executable)))
+                (shell--process-arguments arguments)
+                (main))
+            (serious-condition (condition)
+              (dispatch-report-error condition)
+              (shell-quit 70)))))))

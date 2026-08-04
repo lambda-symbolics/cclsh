@@ -158,7 +158,7 @@
               >$out
           '';
 
-      cclsh = pkgs.stdenvNoCC.mkDerivation {
+      cclsh = pkgs.stdenv.mkDerivation {
         pname = "cclsh";
         version = "1.1.0";
         src = self;
@@ -219,6 +219,7 @@
           export CCLSH_PACKAGED_QUICKLISP_TEMPLATE="$out/share/cclsh/quicklisp"
           export ASDF_OUTPUT_TRANSLATIONS="$PWD/:$TMPDIR/cclsh-fasl/"
           scripts/build
+          scripts/build-fast
 
           runHook postBuild
         '';
@@ -229,6 +230,7 @@
           mkdir -p "$out/bin" "$out/share/cclsh/quicklisp"
           cp -L cclsh "$out/bin/cclsh"
           cp -L cclsh.image "$out/bin/cclsh.image"
+          cp -L cclsh-fast "$out/bin/cclsh-fast"
           cp -R ${quicklispTemplate}/. "$out/share/cclsh/quicklisp/"
           rm -rf "$out/share/cclsh/clinedi/.git"
           rm -rf "$out/share/cclsh/cl-colorist/.git"
@@ -266,13 +268,20 @@
           export XDG_CACHE_HOME="$TMPDIR/cache"
           export XDG_CONFIG_HOME="$TMPDIR/config"
           export XDG_DATA_HOME="$TMPDIR/data"
-          mkdir -p "$HOME"
+          export XDG_RUNTIME_DIR="$TMPDIR/runtime"
+          mkdir -p "$HOME" "$XDG_RUNTIME_DIR"
+          chmod 700 "$XDG_RUNTIME_DIR"
 
           ${lib.getExe cclsh} --version >version
           grep -F "cclsh 1.1.0" version
           grep -F "clinedi ${clinediRev}" version
           grep -F "cl-colorist ${clColoristRev}" version
           ${lib.getExe cclsh} -c 'exit 0'
+          ${cclsh}/bin/cclsh-fast --version >fast-version
+          cmp version fast-version
+          ${cclsh}/bin/cclsh-fast daemon start
+          ${cclsh}/bin/cclsh-fast daemon status | grep -F 'ready=1 active=0'
+          ${cclsh}/bin/cclsh-fast daemon stop
           ${lib.getExe cclsh} -c \
             '(progn (unless (and (probe-file (merge-pathnames "setup.lisp" ql-setup:*quicklisp-home*)) (ql-dist:find-dist "quicklisp") (uiop:subpathp asdf:*user-cache* (uiop:ensure-directory-pathname (pathname (cclsh:getenv "XDG_CACHE_HOME")))) (member #P"${cclsh}/share/cclsh/" ql::*local-project-directories* :test (function equal))) (error "packaged Quicklisp is not writable and initialized")) (values))'
           test -f "$XDG_DATA_HOME/cclsh/quicklisp/setup.lisp"

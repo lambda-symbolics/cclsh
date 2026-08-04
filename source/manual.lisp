@@ -409,6 +409,35 @@ existing path is entered directly and other arguments query zoxide. zi runs
 zoxide's interactive query. Running setup after zoxide disappears removes
 its stale hook and command bindings.")
 
+    ("prewarm" "optional prewarmed interactive launcher"
+     "cclsh-fast is an experimental, opt-in launcher that keeps one
+one-shot CCLSH worker loaded ahead of time:
+
+  cclsh-fast daemon start
+  cclsh-fast daemon status
+  cclsh-fast
+  cclsh-fast daemon stop
+
+Only a no-argument interactive session on one foreground terminal is eligible.
+Options, scripts, pipes, redirections, login-style invocations and incompatible
+process contexts execute the sibling cclsh directly. A missing, stale or slow
+daemon therefore has the same result as launching cclsh normally.
+
+The accelerated session uses a private pseudoterminal. It is not intended as a
+login shell. Detached jobs are unsupported and may be terminated or lose their
+terminal. Unusual sandbox, capability, signal, inherited-descriptor or terminal
+contexts use ordinary cclsh. A nonempty GPG_TTY or SSH_TTY also selects the
+direct runtime because it names the caller's real terminal. Ctrl-Z job control
+inside CCLSH is relayed; externally suspending the proxy or worker itself is not
+a supported accelerated-session operation.
+
+The daemon must be started explicitly in the same trusted user security domain
+and requires an absolute, owner-only XDG_RUNTIME_DIR. status succeeds only when
+a matching worker is ready. stop and restart terminate active accelerated
+sessions. Full source installation, fallback and process-context details:
+
+  https://github.com/luciusmagn/cclsh/blob/master/docs/installation.org")
+
     ("install" "user and shared system installations"
      "The recommended Linux x86-64 package is the Nix flake:
 

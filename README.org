@@ -73,6 +73,7 @@ both command mode and Lisp.
 - startup configuration in =~/.config/cclsh/startup.lisp=
 - command strings, scripts, shebang scripts and piped input
 - optional zoxide integration with =z= and =zi=
+- optional experimental =cclsh-fast= prewarmed interactive launcher
 
 * Documentation
 
@@ -80,6 +81,8 @@ both command mode and Lisp.
   commands, job control, completion, configuration and scripting
 - [[file:docs/installation.org][Installation]]: Nix, source builds and shared
   login-shell deployment
+- [[file:docs/installation.org::*Experimental prewarmed launcher][Prewarmed launcher]]:
+  opt-in daemon setup, fallback behavior and current limits
 - [[file:examples/startup.lisp][Example startup file]]
 - [[file:docs/README.org][Documentation index]]
 

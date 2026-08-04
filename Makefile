@@ -8,10 +8,13 @@ CCL ?= ccl
 CCL_IMAGE ?=
 CCL_SOURCE ?= ../ccl
 
-.PHONY: build system-shell-build login-build ccl-kernel check integration-check install install-system-shell install-login-shell
+.PHONY: build fast system-shell-build login-build ccl-kernel check integration-check install install-fast install-system-shell install-login-shell
 
 build:
 	CCLSH_CCL="$(CCL)" CCLSH_CCL_IMAGE="$(CCL_IMAGE)" scripts/build
+
+fast:
+	scripts/build-fast
 
 system-shell-build: CCL = $(CCL_SOURCE)/lx86cl64
 system-shell-build:
@@ -51,6 +54,13 @@ install:
 	fi
 	CCLSH_SKIP_BUILD=1 CCLSH_INSTALL_DIRECTORY="$(DESTDIR)$(BINDIR)" \
 		scripts/install
+
+install-fast: fast
+	@test -x "$(DESTDIR)$(BINDIR)/cclsh" || { \
+		echo "install-fast requires cclsh in $(DESTDIR)$(BINDIR)" >&2; \
+		exit 1; \
+	}
+	install -m 755 cclsh-fast "$(DESTDIR)$(BINDIR)/cclsh-fast"
 
 install-system-shell:
 	@if test -n "$(DESTDIR)"; then \

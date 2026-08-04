@@ -8,6 +8,7 @@
                 :components
                 ((:file "package")
                  (:file "environment" :depends-on ("package"))
+                 (:file "prewarm" :depends-on ("package" "environment"))
                  (:file "terminal" :depends-on ("package"))
                  (:file "process" :depends-on ("package" "environment"))
                  (:file "lexer"    :depends-on ("package"))
@@ -30,5 +31,6 @@
                                "complete" "directory" "builtins"))
                  (:file "main"
                   :depends-on ("dispatch" "line-editor" "prompt" "directory"
-                               "builtins" "pipeline" "jobs" "manual")))))
+                               "builtins" "pipeline" "jobs" "manual"
+                               "prewarm")))))
   :description "A system shell running inside Clozure CL")

@@ -160,7 +160,74 @@ CCLSH_CCL_IMAGE=/usr/lib/ccl/lx86cl64.image \
 default. A root =make install= without =DESTDIR= is refused; use the shared
 system-shell procedure below instead.
 
-** Verify process and terminal changes
+* Experimental prewarmed launcher
+
+The optional =cclsh-fast= command keeps one CCLSH worker loaded ahead of time.
+It accelerates only a no-argument interactive launch whose standard input,
+output and error are the same foreground terminal. Options, scripts, piped
+input, redirected sessions, login-style invocations and incompatible process
+contexts execute the sibling =cclsh= directly.
+
+The Nix package includes both commands. For a source installation, install
+=cclsh= first, then place the launcher beside its stable path:
+
+#+begin_src sh
+make fast
+make install-fast BINDIR="$HOME/.local/bin"
+#+end_src
+
+Start the per-user daemon explicitly, then invoke the alternate command:
+
+#+begin_src sh
+cclsh-fast daemon start
+cclsh-fast daemon status
+cclsh-fast
+#+end_src
+
+The daemon requires =XDG_RUNTIME_DIR= to be an absolute directory owned by the
+current user with no group or other permissions. Most systemd login sessions
+already provide one. For a development session without one, create a private
+directory before starting the daemon:
+
+#+begin_src sh
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-$HOME/.local/run}"
+install -d -m 700 "$XDG_RUNTIME_DIR"
+#+end_src
+
+=status= prints the ready and active worker counts. It succeeds only when a
+matching daemon has at least one ready worker, so scripts can use it as a
+readiness probe. =restart= replaces the daemon and =stop= shuts it down. Both
+operations terminate active accelerated sessions and their terminal jobs.
+
+If no ready compatible daemon answers within the short lease deadline,
+=cclsh-fast= immediately executes ordinary =cclsh=. Once a lease is committed,
+it cannot fall back without risking two shells, so a later proxy failure
+returns an error instead.
+
+The client uses the direct runtime for nonstandard inherited signal state or
+terminal descriptor flags, an inheritable descriptor above standard error, a
+duplicate environment name, a different CPU affinity or resource/security
+context, and a nonempty =GPG_TTY= or =SSH_TTY=. The last two variables name the
+caller's real terminal and cannot safely bypass the proxy. Workers also require
+matching credentials, namespaces, filesystem root, cgroups, LSM label, limits,
+scheduling state and exec-sensitive environment variables.
+
+This is deliberately opt-in and is not a login-shell target. It relays the
+session through a private pseudoterminal, so programs can observe a different
+terminal and process topology. Detached or session-escaping jobs are not
+supported: they may be terminated or lose their terminal when the proxy ends.
+A worker also begins CCL initialization before the caller's environment and
+directory are applied. The compatibility checks cannot make every possible
+process attribute retroactive and are not a sandbox boundary. Use a daemon only
+inside the same trusted user security domain, and stop it before testing unusual
+sandbox, capability or terminal setups. Ctrl-Z job control inside CCLSH is
+relayed, but externally suspending the proxy or worker process itself is not a
+supported accelerated-session operation.
+
+The ordinary =cclsh= executable and every noninteractive interface remain
+independent of the daemon.
+
+* Verify process and terminal changes
 
 Run the normal checks first:
 
@@ -179,6 +246,10 @@ CCLSH_CCL=../ccl/lx86cl64 \
 CCLSH_CCL_IMAGE=/usr/lib/ccl/lx86cl64.image \
   scripts/integration-check
 #+end_src
+
+The integration command also builds and exercises =cclsh-fast=, including
+direct fallback, worker replacement, caller context transfer, Ctrl-C and
+terminal restoration.
 
 * Install a shared login shell
 

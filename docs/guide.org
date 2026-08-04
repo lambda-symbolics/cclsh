@@ -626,6 +626,11 @@ Clinedi's defaults or another editor.
 
 * Quicklisp and scripting
 
+The optional experimental =cclsh-fast= launcher can reuse a preloaded one-shot
+worker for no-argument interactive sessions. It is a separate opt-in command;
+ordinary =cclsh= and all scripts remain daemon-free. See [[file:installation.org::*Experimental prewarmed launcher][Experimental
+prewarmed launcher]] for setup, exact fallback rules and pseudoterminal limits.
+
 Every saved cclsh image includes Quicklisp and the pinned Clinedi and
 cl-colorist editor dependencies, so =(ql:quickload :system)= works immediately
 and makes the shell a decent scripting host:
