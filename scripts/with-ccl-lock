@@ -2,6 +2,7 @@
 # Serialize builds that target the same CCL Git checkout.
 set -eu
 cd "$(dirname "$0")/.."
+. scripts/platform
 unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_INDEX_FILE
 unset GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES
 
@@ -10,7 +11,7 @@ if [ "$#" -lt 2 ]; then
     exit 2
 fi
 
-ccl_source=$(realpath -e "$1")
+ccl_source=$(cclsh_realpath_existing "$1")
 shift
 git_directory=$(git -C "$ccl_source" rev-parse --absolute-git-dir)
 lock_file=$git_directory/cclsh-kernel-build.lock
@@ -24,12 +25,15 @@ else
     (umask 077; : >"$lock_file")
 fi
 chmod 600 "$lock_file"
+CCLSH_CCL_LOCK_PATH=$lock_file
+export CCLSH_CCL_LOCK_PATH
+if [ "$cclsh_system_name" = NetBSD ]; then
+    exec flock -w "$lock_timeout" "$lock_file" "$@"
+fi
 exec 7<>"$lock_file"
 if ! flock -w "$lock_timeout" 7; then
     echo "cclsh build: timed out waiting for the CCL source" >&2
     exit 1
 fi
 
-CCLSH_CCL_LOCK_PATH=$lock_file
-export CCLSH_CCL_LOCK_PATH
 exec "$@"

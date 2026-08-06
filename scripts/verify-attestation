@@ -7,6 +7,7 @@ if [ "$(/usr/bin/id -u)" -eq 0 ]; then
     export PATH
 fi
 cd "$(dirname "$0")/.."
+. scripts/platform
 
 if [ "$#" -ne 3 ]; then
     echo \
@@ -18,7 +19,7 @@ fi
 kernel=$1
 image=$2
 attestation=$3
-set -- patches/ccl-linux-xstate.patch patches/ccl-cclsh-argv.patch
+set -- $cclsh_required_ccl_patches
 if [ ! -f "$attestation" ] || [ -L "$attestation" ]; then
     echo "cclsh attestation: missing regular attestation: $attestation" >&2
     exit 1

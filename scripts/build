@@ -4,6 +4,7 @@
 set -eu
 umask 077
 cd "$(dirname "$0")/.."
+. scripts/platform
 if ! scripts/build-lock-held; then
     exec scripts/with-build-lock scripts/build "$@"
 fi
@@ -133,7 +134,7 @@ if ! (
      CCLSH_EXPECTED_CL_COLORIST_COMMIT="$expected_cl_colorist_commit" \
      LANG=C \
      LC_ALL=C \
-     /usr/bin/timeout --signal=TERM --kill-after=1 \
+     /usr/bin/timeout --signal SIGTERM --kill-after 1 \
      "$validation_timeout" \
      "$build_root/cclsh.new" -I "$build_root/cclsh.image.new" -c \
      '(let* ((quicklisp-package (find-package "QL"))
@@ -214,7 +215,8 @@ if ! image_hash=$(scripts/file-sha256 cclsh.image.new); then
     exit 1
 fi
 if ! release_hash=$(
-    printf '%s\n%s\n' "$kernel_hash" "$image_hash" | sha256sum
+    printf '%s\n%s\n' "$kernel_hash" "$image_hash" |
+        scripts/stream-sha256
 ); then
     echo "cclsh build: could not hash release identity" >&2
     exit 1
@@ -257,7 +259,7 @@ else
     sync -f "$build_staging/cclsh"
     sync -f "$build_staging/cclsh.image"
     sync -f "$build_staging"
-    mv -T "$build_staging" "$release_directory"
+    cclsh_publish_directory "$build_staging" "$release_directory"
     build_staging=
     sync -f "$releases_directory"
 fi
@@ -265,11 +267,11 @@ fi
 build_transaction=$(mktemp -d "$PWD/.cclsh-build-transaction.XXXXXX")
 temporary_link=$build_transaction/kernel-link
 ln -s "$release_directory/cclsh" "$temporary_link"
-mv -Tf "$temporary_link" cclsh
+cclsh_atomic_replace "$temporary_link" cclsh
 temporary_link=
 temporary_link=$build_transaction/image-link
 ln -s "$release_directory/cclsh.image" "$temporary_link"
-mv -Tf "$temporary_link" cclsh.image
+cclsh_atomic_replace "$temporary_link" cclsh.image
 temporary_link=
 sync -f .
 rm -rf -- "$build_transaction"

@@ -5,8 +5,8 @@
 
 ;; These defaults must be established before loading ASDF, Quicklisp,
 ;; or project source. In particular, CCL's ordinary GETENV decodes raw
-;; environment bytes as Latin-1 on Linux, so the Quicklisp override is
-;; read through libc and decoded explicitly below.
+;; environment bytes without assuming UTF-8, so the Quicklisp override
+;; is read through libc and decoded explicitly below.
 (setf ccl:*default-file-character-encoding* ':utf-8
       ccl:*default-external-format*
       '(:character-encoding :utf-8 :line-termination :unix)
@@ -420,7 +420,10 @@
                   "quicklisp"))
   (asdf:clear-system system))
 (format t "Copying the CCL kernel...~%")
-(uiop:copy-file (truename "/proc/self/exe") "cclsh.new")
+(let ((kernel (ccl::kernel-path)))
+  (unless (and kernel (probe-file kernel))
+    (build-fail "CCL did not report its running kernel path"))
+  (uiop:copy-file (truename kernel) "cclsh.new"))
 (setf *build-dependency-identities* nil)
 (when *build-quicklisp-home*
   (uiop:delete-directory-tree *build-quicklisp-home*
@@ -430,10 +433,22 @@
 
 (in-package #:cl-user)
 
-(delete-package '#:cclsh-build)
-(ccl:gc)
-(format t "Saving cclsh image...~%")
-(ccl:save-application "cclsh.image.new"
-                      :toplevel-function #'cclsh:shell-toplevel
-                      :prepend-kernel nil
-                      :mode #o600)
+(let* ((architecture-package (find-package "ARCH"))
+       (runtime-policy-supported
+         (when architecture-package
+           (multiple-value-bind (symbol present)
+               (find-symbol
+                "GC-TRAP-FUNCTION-INHIBIT-RUNTIME-OPTIONS"
+                architecture-package)
+             (and present (boundp symbol)))))
+       (save-arguments
+         (list :toplevel-function #'cclsh:shell-toplevel
+               :prepend-kernel nil
+               :mode #o600)))
+  (when runtime-policy-supported
+    (setf save-arguments
+          (append save-arguments '(:process-runtime-options nil))))
+  (delete-package '#:cclsh-build)
+  (ccl:gc)
+  (format t "Saving cclsh image...~%")
+  (apply #'ccl:save-application "cclsh.image.new" save-arguments))

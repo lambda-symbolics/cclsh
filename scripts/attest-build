@@ -3,6 +3,7 @@
 # source tree contains every required patch.
 set -eu
 cd "$(dirname "$0")/.."
+. scripts/platform
 unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_INDEX_FILE
 unset GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES
 if ! scripts/build-lock-held; then
@@ -14,7 +15,7 @@ if [ "$#" -ne 3 ]; then
     exit 2
 fi
 
-ccl_source=$(realpath -e "$1")
+ccl_source=$(cclsh_realpath_existing "$1")
 if ! scripts/ccl-lock-held "$ccl_source"; then
     exec scripts/with-ccl-lock \
         "$ccl_source" scripts/attest-build "$ccl_source" "$2" "$3"
@@ -24,7 +25,7 @@ if ! ccl_path=$(command -v "$ccl_command"); then
     echo "cclsh attestation: selected CCL is unavailable: $ccl_command" >&2
     exit 1
 fi
-ccl_kernel=$(realpath -e "$ccl_path")
+ccl_kernel=$(cclsh_realpath_existing "$ccl_path")
 attestation_argument=$3
 attestation_name=$(basename -- "$attestation_argument")
 case "$attestation_name" in
@@ -34,7 +35,7 @@ case "$attestation_name" in
         ;;
 esac
 if ! attestation_parent=$(
-    realpath -e -- "$(dirname -- "$attestation_argument")"
+    cclsh_realpath_existing "$(dirname -- "$attestation_argument")"
 ) || [ ! -d "$attestation_parent" ]
 then
     echo "cclsh attestation: attestation directory does not exist" >&2
@@ -47,17 +48,25 @@ if [ -e "$attestation" ] || [ -L "$attestation" ]; then
         exit 1
     fi
 fi
-set -- patches/ccl-linux-xstate.patch patches/ccl-cclsh-argv.patch
-source_kernel=$(realpath -e "$ccl_source/lx86cl64")
+set -- $cclsh_required_ccl_patches
+kernel_name=${CCLSH_CCL_KERNEL_NAME:-$cclsh_default_ccl_kernel}
+kernel_directory=${CCLSH_CCL_KERNEL_DIRECTORY:-$cclsh_default_ccl_kernel_directory}
+if [ -z "$kernel_name" ] || [ -z "$kernel_directory" ]; then
+    echo "cclsh attestation: unsupported system: $cclsh_system_name" >&2
+    exit 1
+fi
+source_kernel=$(cclsh_realpath_existing "$ccl_source/$kernel_name")
 if [ "$ccl_kernel" != "$source_kernel" ]; then
     echo "cclsh attestation: selected CCL is not $source_kernel" >&2
     exit 1
 fi
-if ! make -q -C "$ccl_source/lisp-kernel/linuxx8664"; then
+if ! make -q -C "$ccl_source/lisp-kernel/$kernel_directory" \
+     "../../$kernel_name"
+then
     echo "cclsh attestation: verified CCL kernel is out of date" >&2
     exit 1
 fi
-resolved_kernel=$(realpath -e cclsh)
+resolved_kernel=$(cclsh_realpath_existing cclsh)
 resolved_image=$resolved_kernel.image
 if ! cmp -s "$resolved_kernel" "$source_kernel"; then
     echo "cclsh attestation: built kernel differs from the verified CCL" >&2
@@ -111,7 +120,7 @@ chmod 600 "$temporary"
 } >"$temporary"
 scripts/verify-attestation \
     "$resolved_kernel" "$resolved_image" "$temporary"
-mv -Tf -- "$temporary" "$attestation"
+cclsh_atomic_replace "$temporary" "$attestation"
 temporary=
 sync -f "$attestation"
 sync -f "$attestation_parent"

@@ -2,14 +2,25 @@
 # Succeed only when file descriptor 9 owns this checkout's build lock.
 set -eu
 cd "$(dirname "$0")/.."
+. scripts/platform
 
-expected_lock=$(realpath -m .cclsh-build.lock)
+expected_lock=$(cclsh_realpath_missing .cclsh-build.lock)
+if [ "$cclsh_system_name" = NetBSD ]; then
+    if [ "${CCLSH_BUILD_LOCK_PATH:-}" != "$expected_lock" ] ||
+       [ ! -f "$expected_lock" ] ||
+       [ -L "$expected_lock" ] ||
+       ! cclsh_inherited_lock_held "$expected_lock"
+    then
+        exit 1
+    fi
+    exit 0
+fi
 if [ "${CCLSH_BUILD_LOCK_PATH:-}" != "$expected_lock" ] ||
    [ ! -f "$expected_lock" ] ||
    [ -L "$expected_lock" ] ||
    [ ! -e "/proc/$$/fd/9" ] ||
-   [ "$(stat -Lc %d:%i "/proc/$$/fd/9" 2>/dev/null || true)" != \
-     "$(stat -Lc %d:%i "$expected_lock")" ]
+   [ "$(cclsh_stat_follow_device_inode "/proc/$$/fd/9" 2>/dev/null || true)" != \
+     "$(cclsh_stat_follow_device_inode "$expected_lock")" ]
 then
     exit 1
 fi

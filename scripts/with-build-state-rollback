@@ -2,6 +2,7 @@
 # Restore the public kernel, image and attestation paths when COMMAND fails.
 set -eu
 cd "$(dirname "$0")/.."
+. scripts/platform
 
 if [ "$#" -eq 0 ]; then
     echo "usage: scripts/with-build-state-rollback COMMAND [ARGUMENT...]" >&2
@@ -32,7 +33,7 @@ snapshot_path()
                 >&2
             return 1
         fi
-        cp --reflink=auto --preserve=all -- "$snapshot_name" \
+        cclsh_copy_preserving "$snapshot_name" \
             "$transaction_directory/$snapshot_name.file"
     else
         : >"$transaction_directory/$snapshot_name.missing"
@@ -50,13 +51,13 @@ restore_path()
         fi
         restore_link=$transaction_directory/$restore_name.restore
         if ! ln -s "$restore_target" "$restore_link" ||
-           ! mv -Tf -- "$restore_link" "$restore_name"
+           ! cclsh_atomic_replace "$restore_link" "$restore_name"
         then
             return 1
         fi
     elif [ -f "$transaction_directory/$restore_name.file" ]; then
-        if ! mv -Tf -- "$transaction_directory/$restore_name.file" \
-             "$restore_name"
+        if ! cclsh_atomic_replace \
+             "$transaction_directory/$restore_name.file" "$restore_name"
         then
             return 1
         fi

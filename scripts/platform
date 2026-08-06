@@ -1,0 +1,229 @@
+#!/bin/sh
+# Shared operating-system adapters for build and installation scripts.
+
+cclsh_system_name=$(/usr/bin/uname -s)
+
+case "$cclsh_system_name" in
+    Linux)
+        cclsh_default_ccl_kernel=lx86cl64
+        cclsh_default_ccl_image=lx86cl64.image
+        cclsh_default_ccl_kernel_directory=linuxx8664
+        cclsh_required_ccl_patches=
+        cclsh_required_ccl_patches="patches/ccl-linux-xstate.patch"
+        cclsh_required_ccl_patches="$cclsh_required_ccl_patches patches/ccl-cclsh-argv.patch"
+        ;;
+    NetBSD)
+        case "$(/usr/bin/uname -p)" in
+            earmv7hf)
+                cclsh_default_ccl_kernel=narmcl
+                cclsh_default_ccl_image=narmcl.image
+                cclsh_default_ccl_kernel_directory=netbsdarm
+                ;;
+            *)
+                cclsh_default_ccl_kernel=
+                cclsh_default_ccl_image=
+                cclsh_default_ccl_kernel_directory=
+                ;;
+        esac
+        cclsh_required_ccl_patches=
+        case ":${PATH:-}:" in
+            *:/usr/sbin:*) ;;
+            *) PATH=${PATH:+$PATH:}/usr/sbin ;;
+        esac
+        case ":$PATH:" in
+            *:/sbin:*) ;;
+            *) PATH=$PATH:/sbin ;;
+        esac
+        export PATH
+        ;;
+    *)
+        cclsh_default_ccl_kernel=
+        cclsh_default_ccl_image=
+        cclsh_default_ccl_kernel_directory=
+        cclsh_required_ccl_patches=
+        ;;
+esac
+
+cclsh_realpath_existing()
+{
+    case "$cclsh_system_name" in
+        NetBSD)
+            [ -e "$1" ] && realpath -- "$1"
+            ;;
+        *) realpath -e -- "$1" ;;
+    esac
+}
+
+cclsh_realpath_missing()
+{
+    case "$cclsh_system_name" in
+        NetBSD)
+            case "$1" in
+                /*) unresolved_path=$1 ;;
+                *) unresolved_path=$PWD/$1 ;;
+            esac
+            unresolved_suffix=
+            existing_path=$unresolved_path
+            while [ ! -e "$existing_path" ] && [ ! -L "$existing_path" ]; do
+                path_component=$(basename -- "$existing_path")
+                if [ -n "$unresolved_suffix" ]; then
+                    unresolved_suffix=$path_component/$unresolved_suffix
+                else
+                    unresolved_suffix=$path_component
+                fi
+                parent_path=$(dirname -- "$existing_path")
+                if [ "$parent_path" = "$existing_path" ]; then
+                    return 1
+                fi
+                existing_path=$parent_path
+            done
+            canonical_prefix=$(cclsh_realpath_existing "$existing_path") ||
+                return 1
+            if [ -n "$unresolved_suffix" ]; then
+                combined_path=$canonical_prefix/$unresolved_suffix
+            else
+                combined_path=$canonical_prefix
+            fi
+            LC_ALL=C awk -v path="$combined_path" 'BEGIN {
+                count = split(path, components, "/")
+                depth = 0
+                for (position = 1; position <= count; position++) {
+                    component = components[position]
+                    if (component == "" || component == ".")
+                        continue
+                    if (component == "..") {
+                        if (depth > 0)
+                            depth--
+                        continue
+                    }
+                    stack[++depth] = component
+                }
+                result = ""
+                for (position = 1; position <= depth; position++)
+                    result = result "/" stack[position]
+                if (result == "")
+                    result = "/"
+                print result
+            }'
+            ;;
+        *) realpath -m -- "$1" ;;
+    esac
+}
+
+cclsh_stat_mode()
+{
+    case "$cclsh_system_name" in
+        NetBSD) stat -f %Lp -- "$1" ;;
+        *) stat -c %a -- "$1" ;;
+    esac
+}
+
+cclsh_stat_follow_mode()
+{
+    case "$cclsh_system_name" in
+        NetBSD) stat -Lf %Lp -- "$1" ;;
+        *) stat -Lc %a -- "$1" ;;
+    esac
+}
+
+cclsh_stat_owner()
+{
+    case "$cclsh_system_name" in
+        NetBSD) stat -f %u -- "$1" ;;
+        *) stat -c %u -- "$1" ;;
+    esac
+}
+
+cclsh_stat_group()
+{
+    case "$cclsh_system_name" in
+        NetBSD) stat -f %g -- "$1" ;;
+        *) stat -c %g -- "$1" ;;
+    esac
+}
+
+cclsh_stat_follow_device_inode()
+{
+    case "$cclsh_system_name" in
+        NetBSD) stat -Lf %d:%i -- "$1" ;;
+        *) stat -Lc %d:%i -- "$1" ;;
+    esac
+}
+
+cclsh_path_is_group_or_world_writable()
+{
+    checked_mode=$(cclsh_stat_mode "$1") || return 1
+    [ $((0$checked_mode & 022)) -ne 0 ]
+}
+
+cclsh_copy_preserving()
+{
+    case "$cclsh_system_name" in
+        NetBSD) cp -p -- "$1" "$2" ;;
+        *) cp --preserve=all -- "$1" "$2" ;;
+    esac
+}
+
+cclsh_atomic_replace()
+{
+    if [ -d "$2" ] && [ ! -L "$2" ]; then
+        return 1
+    fi
+    case "$cclsh_system_name" in
+        NetBSD) mv -fh -- "$1" "$2" ;;
+        *) mv -Tf -- "$1" "$2" ;;
+    esac
+}
+
+cclsh_publish_directory()
+{
+    if [ -e "$2" ] || [ -L "$2" ]; then
+        return 1
+    fi
+    case "$cclsh_system_name" in
+        NetBSD) mv -h -- "$1" "$2" ;;
+        *) mv -T -- "$1" "$2" ;;
+    esac
+}
+
+cclsh_stream_sha256()
+{
+    case "$cclsh_system_name" in
+        NetBSD) sha256 -q ;;
+        *) sha256sum ;;
+    esac
+}
+
+cclsh_inherited_lock_held()
+{
+    lock_path=$1
+    case "$cclsh_system_name" in
+        NetBSD)
+            lock_descriptor=$(
+                fstat -n -p "$$" "$lock_path" 2>/dev/null |
+                    awk 'NR > 1 && $4 ~ /^[0-9]+$/ {
+                        print $4
+                        exit
+                    }'
+            ) || return 1
+            [ -n "$lock_descriptor" ] &&
+                flock -n "$lock_descriptor"
+            ;;
+        *) return 1 ;;
+    esac
+}
+
+cclsh_root_scratch_parent()
+{
+    for scratch_candidate in /run /var/run; do
+        if [ -d "$scratch_candidate" ] &&
+           [ ! -L "$scratch_candidate" ] &&
+           [ "$(cclsh_stat_owner "$scratch_candidate")" -eq 0 ] &&
+           ! cclsh_path_is_group_or_world_writable "$scratch_candidate"
+        then
+            printf '%s\n' "$scratch_candidate"
+            return 0
+        fi
+    done
+    return 1
+}

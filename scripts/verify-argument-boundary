@@ -7,13 +7,14 @@ if [ "$running_uid" -eq 0 ]; then
     export PATH
 fi
 cd "$(dirname "$0")/.."
+. scripts/platform
 
 if [ "$#" -ne 2 ]; then
     echo "usage: scripts/verify-argument-boundary KERNEL IMAGE" >&2
     exit 2
 fi
-kernel=$(realpath -e -- "$1")
-image=$(realpath -e -- "$2")
+kernel=$(cclsh_realpath_existing "$1")
+image=$(cclsh_realpath_existing "$2")
 if [ ! -f "$kernel" ] || [ -L "$kernel" ] || [ ! -x "$kernel" ]; then
     echo "cclsh argument check: kernel is not a regular executable" >&2
     exit 1
@@ -42,11 +43,7 @@ if [ ! -x /usr/bin/timeout ]; then
 fi
 
 if [ "$running_uid" -eq 0 ]; then
-    scratch_parent=/run
-    if [ ! -d "$scratch_parent" ] || [ -L "$scratch_parent" ] ||
-       [ "$(stat -c %u "$scratch_parent")" -ne 0 ] ||
-       [ -n "$(find "$scratch_parent" -prune -perm /022 -print -quit)" ]
-    then
+    if ! scratch_parent=$(cclsh_root_scratch_parent); then
         echo "cclsh argument check: unsafe root scratch directory" >&2
         exit 1
     fi
@@ -73,7 +70,7 @@ argument_probe=$(
         CCLSH_SAFE=1 \
         LANG=C \
         LC_ALL=C \
-        /usr/bin/timeout --signal=TERM --kill-after=1 \
+        /usr/bin/timeout --signal SIGTERM --kill-after 1 \
             "$probe_timeout" "$probe_home/cclsh" \
             -I "$image" -c --no-avx 2>&1
 )

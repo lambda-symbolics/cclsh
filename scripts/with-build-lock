@@ -2,6 +2,7 @@
 # Run one repository build operation under the common publication lock.
 set -eu
 cd "$(dirname "$0")/.."
+. scripts/platform
 
 if [ "$#" -eq 0 ]; then
     echo "usage: scripts/with-build-lock COMMAND [ARGUMENT...]" >&2
@@ -19,12 +20,15 @@ else
     (umask 077; : >"$lock_file")
 fi
 chmod 600 "$lock_file"
+CCLSH_BUILD_LOCK_PATH=$(cclsh_realpath_missing "$lock_file")
+export CCLSH_BUILD_LOCK_PATH
+if [ "$cclsh_system_name" = NetBSD ]; then
+    exec flock -w "$lock_timeout" "$lock_file" "$@"
+fi
 exec 9<>"$lock_file"
 if ! flock -w "$lock_timeout" 9; then
     echo "cclsh build: timed out waiting for another build" >&2
     exit 1
 fi
 
-CCLSH_BUILD_LOCK_PATH=$(realpath -m "$lock_file")
-export CCLSH_BUILD_LOCK_PATH
 exec "$@"

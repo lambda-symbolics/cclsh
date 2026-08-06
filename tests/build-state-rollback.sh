@@ -17,8 +17,7 @@ trap 'exit 143' 15
 
 project=$temporary_directory/project
 mkdir -p "$project/scripts" "$project/releases/old"
-cp scripts/with-build-state-rollback \
-    "$project/scripts/with-build-state-rollback"
+cp scripts/platform scripts/with-build-state-rollback "$project/scripts/"
 printf '%s\n' '#!/bin/sh' 'exit 0' >"$project/scripts/build-lock-held"
 chmod 755 \
     "$project/scripts/with-build-state-rollback" \
@@ -49,7 +48,7 @@ if [ "$rollback_status" -ne 71 ] ||
    [ "$(readlink "$project/cclsh.image")" != releases/old/cclsh.image ] ||
    ! cmp -s "$project/attestation.expected" "$project/cclsh.attestation" ||
    find "$project" -maxdepth 1 -name '.cclsh-state-transaction.*' \
-       -print -quit | grep -q .
+       -print | grep -q .
 then
     echo "failed build command did not restore public state" >&2
     exit 1
@@ -89,7 +88,7 @@ set -e
 if [ "$mutation_status" -ne 73 ] ||
    ! cmp -s "$project/attestation.expected" "$project/cclsh.attestation" ||
    find "$project" -maxdepth 1 -name '.cclsh-state-transaction.*' \
-       -print -quit | grep -q .
+       -print | grep -q .
 then
     echo "rollback snapshot did not survive in-place mutation" >&2
     exit 1
@@ -105,7 +104,7 @@ set -e
 if [ "$unchanged_status" -ne 74 ] ||
    ! cmp -s "$project/attestation.expected" "$project/cclsh.attestation" ||
    find "$project" -maxdepth 1 -name '.cclsh-state-transaction.*' \
-       -print -quit | grep -q .
+       -print | grep -q .
 then
     echo "rollback failed when public regular state was unchanged" >&2
     exit 1

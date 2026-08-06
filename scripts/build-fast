@@ -1,6 +1,11 @@
 #!/bin/sh
 set -eu
 
+if [ "$(uname -s)" != Linux ]; then
+    echo "cclsh fast launcher is supported only on Linux" >&2
+    exit 2
+fi
+
 repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 temporary=$(mktemp "$repo/.cclsh-fast.XXXXXX")
 cleanup()

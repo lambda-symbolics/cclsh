@@ -1,6 +1,8 @@
 #!/bin/sh
 # Print a verified SHA-256 digest for one regular, non-symlink file.
 set -eu
+script_directory=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+. "$script_directory/platform"
 
 if [ "$#" -ne 1 ]; then
     echo "usage: scripts/file-sha256 FILE" >&2
@@ -11,18 +13,28 @@ if [ ! -f "$file" ] || [ -L "$file" ] || [ ! -r "$file" ]; then
     echo "cclsh hash: not a readable regular file: $file" >&2
     exit 1
 fi
-if ! output=$(LC_ALL=C sha256sum -- "$file"); then
+case "$cclsh_system_name" in
+    NetBSD)
+        hash_program=sha256
+        set -- -q -- "$file"
+        ;;
+    *)
+        hash_program=sha256sum
+        set -- -- "$file"
+        ;;
+esac
+if ! output=$(LC_ALL=C "$hash_program" "$@"); then
     echo "cclsh hash: could not hash file: $file" >&2
     exit 1
 fi
 digest=${output%% *}
 if [ "${#digest}" -ne 64 ]; then
-    echo "cclsh hash: sha256sum returned an invalid digest: $file" >&2
+    echo "cclsh hash: $hash_program returned an invalid digest: $file" >&2
     exit 1
 fi
 case "$digest" in
     *[!0123456789abcdef]*)
-        echo "cclsh hash: sha256sum returned an invalid digest: $file" >&2
+        echo "cclsh hash: $hash_program returned an invalid digest: $file" >&2
         exit 1
         ;;
 esac

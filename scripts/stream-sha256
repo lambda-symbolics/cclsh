@@ -1,0 +1,10 @@
+#!/bin/sh
+set -eu
+script_directory=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+. "$script_directory/platform"
+
+if [ "$#" -ne 0 ]; then
+    echo "usage: scripts/stream-sha256" >&2
+    exit 2
+fi
+cclsh_stream_sha256

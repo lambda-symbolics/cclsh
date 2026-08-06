@@ -1,0 +1,28 @@
+#!/bin/sh
+# Run a probe with the complete identity of another local account.
+set -eu
+script_directory=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+. "$script_directory/platform"
+
+if [ "$#" -lt 2 ]; then
+    echo "usage: scripts/run-as-user USER COMMAND [ARGUMENT...]" >&2
+    exit 2
+fi
+probe_user=$1
+shift
+
+case "$cclsh_system_name" in
+    Linux)
+        exec runuser -u "$probe_user" -- "$@"
+        ;;
+    NetBSD)
+        probe_gid=$(id -g "$probe_user")
+        probe_groups=$(id -G "$probe_user" | tr ' ' ',')
+        exec /usr/sbin/chroot \
+            -u "$probe_user" -g "$probe_gid" -G "$probe_groups" / "$@"
+        ;;
+    *)
+        echo "cclsh probe: unsupported system: $cclsh_system_name" >&2
+        exit 1
+        ;;
+esac

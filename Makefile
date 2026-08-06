@@ -4,7 +4,7 @@ DESTDIR ?=
 SHELLS_FILE ?= /etc/shells
 LOGIN_USER ?=
 PROBE_USER ?=
-CCL ?= ccl
+CCL ?=
 CCL_IMAGE ?=
 CCL_SOURCE ?= ../ccl
 
@@ -16,10 +16,15 @@ build:
 fast:
 	scripts/build-fast
 
-system-shell-build: CCL = $(CCL_SOURCE)/lx86cl64
 system-shell-build:
+	@set -e; \
+	ccl_command="$(CCL)"; \
+	if test -z "$$ccl_command"; then \
+		ccl_kernel=$$(scripts/platform-info ccl-kernel); \
+		ccl_command="$(CCL_SOURCE)/$$ccl_kernel"; \
+	fi; \
 	CCLSH_CCL_IMAGE="$(CCL_IMAGE)" scripts/login-build \
-		"$(CCL_SOURCE)" "$(CCL)" cclsh.attestation
+		"$(CCL_SOURCE)" "$$ccl_command" cclsh.attestation
 
 login-build: system-shell-build
 
@@ -32,7 +37,7 @@ check:
 integration-check:
 	@set -e; \
 	verify_current() { \
-		kernel=$$(realpath -e cclsh); \
+		kernel=$$(scripts/resolve-path existing cclsh); \
 		scripts/verify-attestation \
 			"$$kernel" "$$kernel.image" cclsh.attestation; \
 	}; \

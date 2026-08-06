@@ -2,6 +2,7 @@
 # Verify or apply cclsh's attested CCL changes and build a clean kernel.
 set -eu
 cd "$(dirname "$0")/.."
+. scripts/platform
 unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_INDEX_FILE
 unset GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES
 
@@ -13,12 +14,12 @@ if [ "$#" -ne 1 ]; then
     exit 2
 fi
 
-ccl_source=$(realpath -e "$1")
+ccl_source=$(cclsh_realpath_existing "$1")
 if ! scripts/ccl-lock-held "$ccl_source"; then
     exec scripts/with-ccl-lock \
         "$ccl_source" scripts/ccl-kernel "$ccl_source"
 fi
-set -- patches/ccl-linux-xstate.patch patches/ccl-cclsh-argv.patch
+set -- $cclsh_required_ccl_patches
 for patch in "$@"; do
     patch_path=$PWD/$patch
     if git -C "$ccl_source" apply --reverse --check "$patch_path" \
@@ -33,5 +34,10 @@ for patch in "$@"; do
     fi
 done
 
-make -C "$ccl_source/lisp-kernel/linuxx8664" clean
-make -C "$ccl_source/lisp-kernel/linuxx8664"
+kernel_directory=${CCLSH_CCL_KERNEL_DIRECTORY:-$cclsh_default_ccl_kernel_directory}
+if [ -z "$kernel_directory" ]; then
+    echo "cclsh kernel: unsupported system: $cclsh_system_name" >&2
+    exit 1
+fi
+make -C "$ccl_source/lisp-kernel/$kernel_directory" clean
+make -C "$ccl_source/lisp-kernel/$kernel_directory"

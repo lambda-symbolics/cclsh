@@ -2,21 +2,32 @@
 # Succeed only when descriptor 7 owns the selected CCL checkout lock.
 set -eu
 cd "$(dirname "$0")/.."
+. scripts/platform
 unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_INDEX_FILE
 unset GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES
 
 if [ "$#" -ne 1 ]; then
     exit 1
 fi
-ccl_source=$(realpath -e "$1")
+ccl_source=$(cclsh_realpath_existing "$1")
 git_directory=$(git -C "$ccl_source" rev-parse --absolute-git-dir)
 expected_lock=$git_directory/cclsh-kernel-build.lock
+if [ "$cclsh_system_name" = NetBSD ]; then
+    if [ "${CCLSH_CCL_LOCK_PATH:-}" != "$expected_lock" ] ||
+       [ ! -f "$expected_lock" ] ||
+       [ -L "$expected_lock" ] ||
+       ! cclsh_inherited_lock_held "$expected_lock"
+    then
+        exit 1
+    fi
+    exit 0
+fi
 if [ "${CCLSH_CCL_LOCK_PATH:-}" != "$expected_lock" ] ||
    [ ! -f "$expected_lock" ] ||
    [ -L "$expected_lock" ] ||
    [ ! -e "/proc/$$/fd/7" ] ||
-   [ "$(stat -Lc %d:%i "/proc/$$/fd/7" 2>/dev/null || true)" != \
-     "$(stat -Lc %d:%i "$expected_lock")" ]
+   [ "$(cclsh_stat_follow_device_inode "/proc/$$/fd/7" 2>/dev/null || true)" != \
+     "$(cclsh_stat_follow_device_inode "$expected_lock")" ]
 then
     exit 1
 fi

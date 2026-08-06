@@ -2,6 +2,7 @@
 # Build and attest one login-shell release as a serialized transaction.
 set -eu
 cd "$(dirname "$0")/.."
+. scripts/platform
 
 if ! scripts/build-lock-held; then
     exec scripts/with-build-lock scripts/login-build "$@"
@@ -10,7 +11,7 @@ if [ "$#" -ne 3 ]; then
     echo "usage: scripts/login-build CCL-SOURCE CCL ATTESTATION" >&2
     exit 2
 fi
-if [ "$(realpath -m -- "$3")" != "$PWD/cclsh.attestation" ]; then
+if [ "$(cclsh_realpath_missing "$3")" != "$PWD/cclsh.attestation" ]; then
     echo \
         "cclsh login-build: attestation must be $PWD/cclsh.attestation" \
         >&2
@@ -22,7 +23,7 @@ if [ "${CCLSH_LOGIN_STATE_TRANSACTION:-0}" != 1 ]; then
     exec scripts/with-build-state-rollback scripts/login-build "$@"
 fi
 
-ccl_source=$(realpath -e "$1")
+ccl_source=$(cclsh_realpath_existing "$1")
 ccl_command=$2
 attestation=$3
 if ! scripts/ccl-lock-held "$ccl_source"; then
@@ -31,8 +32,9 @@ if ! scripts/ccl-lock-held "$ccl_source"; then
         "$ccl_source" "$ccl_command" "$attestation"
 fi
 if [ -z "${CCLSH_CCL_IMAGE:-}" ]; then
-    if [ -f "$ccl_source/lx86cl64.image" ]; then
-        CCLSH_CCL_IMAGE=$ccl_source/lx86cl64.image
+    ccl_image=${CCLSH_CCL_IMAGE_NAME:-$cclsh_default_ccl_image}
+    if [ -n "$ccl_image" ] && [ -f "$ccl_source/$ccl_image" ]; then
+        CCLSH_CCL_IMAGE=$ccl_source/$ccl_image
         export CCLSH_CCL_IMAGE
     else
         echo \

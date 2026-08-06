@@ -1,0 +1,17 @@
+#!/bin/sh
+set -eu
+script_directory=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+. "$script_directory/platform"
+
+if [ "$#" -ne 2 ]; then
+    echo "usage: scripts/resolve-path existing|missing PATH" >&2
+    exit 2
+fi
+case "$1" in
+    existing) cclsh_realpath_existing "$2" ;;
+    missing) cclsh_realpath_missing "$2" ;;
+    *)
+        echo "cclsh path: expected existing or missing" >&2
+        exit 2
+        ;;
+esac

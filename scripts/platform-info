@@ -1,0 +1,25 @@
+#!/bin/sh
+set -eu
+script_directory=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+. "$script_directory/platform"
+
+if [ "$#" -ne 1 ]; then
+    echo "usage: scripts/platform-info PROPERTY" >&2
+    exit 2
+fi
+
+case "$1" in
+    ccl-kernel) value=$cclsh_default_ccl_kernel ;;
+    ccl-image) value=$cclsh_default_ccl_image ;;
+    ccl-kernel-directory) value=$cclsh_default_ccl_kernel_directory ;;
+    system) value=$cclsh_system_name ;;
+    *)
+        echo "cclsh platform: unknown property: $1" >&2
+        exit 2
+        ;;
+esac
+if [ -z "$value" ]; then
+    echo "cclsh platform: unsupported system: $cclsh_system_name" >&2
+    exit 1
+fi
+printf '%s\n' "$value"

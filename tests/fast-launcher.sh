@@ -3,6 +3,11 @@
 set -eu
 cd "$(dirname "$0")/.."
 
+if [ "$(uname -s)" != Linux ]; then
+    echo "Fast-launcher checks skipped: Linux required."
+    exit 0
+fi
+
 if [ ! -x ./cclsh ] || [ ! -s ./cclsh.image ]; then
     echo "fast-launcher check requires a completed scripts/build" >&2
     exit 2
