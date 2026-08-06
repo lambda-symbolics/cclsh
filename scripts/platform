@@ -1,7 +1,15 @@
 #!/bin/sh
 # Shared operating-system adapters for build and installation scripts.
 
-cclsh_system_name=$(/usr/bin/uname -s)
+if [ -x /usr/bin/uname ]; then
+    cclsh_uname=/usr/bin/uname
+else
+    cclsh_uname=$(command -v uname) || {
+        echo "cclsh platform: uname is required" >&2
+        return 1 2>/dev/null || exit 1
+    }
+fi
+cclsh_system_name=$("$cclsh_uname" -s)
 
 case "$cclsh_system_name" in
     Linux)
@@ -13,7 +21,7 @@ case "$cclsh_system_name" in
         cclsh_required_ccl_patches="$cclsh_required_ccl_patches patches/ccl-cclsh-argv.patch"
         ;;
     NetBSD)
-        case "$(/usr/bin/uname -p)" in
+        case "$("$cclsh_uname" -p)" in
             earmv7hf)
                 cclsh_default_ccl_kernel=narmcl
                 cclsh_default_ccl_image=narmcl.image
