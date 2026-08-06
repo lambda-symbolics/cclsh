@@ -77,11 +77,13 @@ install-system-shell:
 	CCLSH_SYSTEM_SHELL=1 \
 	CCLSH_PROBE_USER="$(PROBE_USER)" \
 	CCLSH_SHELLS_FILE="$(SHELLS_FILE)" \
-	CCLSH_BUILD_ATTESTATION="$(CURDIR)/cclsh.attestation" \
+	CCLSH_BUILD_ATTESTATION="$$(scripts/resolve-path existing cclsh.attestation)" \
 		scripts/install
 
 install-login-shell:
 	@echo "install-login-shell is deprecated; installing one shared system shell" >&2
-	@$(MAKE) --no-print-directory install-system-shell \
+	@probe_user="$(PROBE_USER)"; \
+	if test -z "$$probe_user"; then probe_user="$(LOGIN_USER)"; fi; \
+	$(MAKE) install-system-shell \
 		BINDIR="$(BINDIR)" SHELLS_FILE="$(SHELLS_FILE)" \
-		PROBE_USER="$(if $(PROBE_USER),$(PROBE_USER),$(LOGIN_USER))"
+		PROBE_USER="$$probe_user"
