@@ -2,6 +2,7 @@
 # Exercise the real saved kernel and image through their installed symlink.
 set -eu
 cd "$(dirname "$0")/.."
+. scripts/platform
 
 if [ ! -x ./cclsh ] || [ ! -s ./cclsh.image ]; then
     echo "installed-image check requires a completed scripts/build" >&2
@@ -30,8 +31,8 @@ CCLSH_INSTALL_DIRECTORY="$install_directory" \
 scripts/install >/dev/null
 
 shell_path=$install_directory/cclsh
-resolved_shell=$(realpath -e "$shell_path")
-resolved_stable_image=$(realpath -e "$shell_path.image")
+resolved_shell=$(cclsh_realpath_existing "$shell_path")
+resolved_stable_image=$(cclsh_realpath_existing "$shell_path.image")
 if [ ! -L "$shell_path" ] || [ ! -L "$shell_path.image" ] ||
    [ ! -f "$resolved_shell.image" ] ||
    [ "$resolved_stable_image" != "$resolved_shell.image" ]
@@ -41,8 +42,8 @@ then
 fi
 if ! cmp -s "$PWD/cclsh" "$resolved_shell" ||
    ! cmp -s "$PWD/cclsh.image" "$resolved_shell.image" ||
-   [ "$(stat -c %a "$resolved_shell")" != 755 ] ||
-   [ "$(stat -c %a "$resolved_shell.image")" != 600 ]
+   [ "$(cclsh_stat_mode "$resolved_shell")" != 755 ] ||
+   [ "$(cclsh_stat_mode "$resolved_shell.image")" != 600 ]
 then
     echo "installed release content or modes differ from the build" >&2
     exit 1

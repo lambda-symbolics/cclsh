@@ -2,6 +2,8 @@
 # Regression checks for one shared, root-owned system shell installation.
 set -eu
 cd "$(dirname "$0")/.."
+. scripts/platform
+run_as_user=$PWD/scripts/run-as-user
 
 if [ "$(id -u)" -ne 0 ]; then
     echo "Shared system-shell installation checks skipped: root required."
@@ -12,7 +14,13 @@ if ! id nobody >/dev/null 2>&1; then
     exit 0
 fi
 
-temporary_directory=$(mktemp -d /run/cclsh-system-install-check.XXXXXX)
+if ! scratch_parent=$(cclsh_root_scratch_parent); then
+    echo "system install check: no safe root scratch directory" >&2
+    exit 1
+fi
+temporary_directory=$(
+    mktemp -d "$scratch_parent/cclsh-system-install-check.XXXXXX"
+)
 cleanup()
 {
     rm -rf -- "$temporary_directory"
@@ -68,8 +76,7 @@ write_test_attestation()
         printf '%s\n' 'cclsh-login-build-v1'
         printf 'kernel-sha256 %s\n' "$kernel_hash"
         printf 'image-sha256 %s\n' "$image_hash"
-        for patch in patches/ccl-linux-xstate.patch patches/ccl-cclsh-argv.patch
-        do
+        for patch in $cclsh_required_ccl_patches; do
             patch_hash=$(scripts/file-sha256 "$patch")
             printf 'patch-sha256 %s %s\n' \
                 "$(basename "$patch")" \
@@ -83,16 +90,36 @@ assert_system_release()
 {
     checked_release=$1
     checked_directory=$(dirname "$checked_release")
-    if [ "$(stat -c '%a:%u:%g' "$checked_directory")" != 755:0:0 ] ||
-       [ "$(stat -c '%a:%u:%g' "$checked_release")" != 755:0:0 ] ||
-       [ "$(stat -c '%a:%u:%g' "$checked_release.image")" != 644:0:0 ] ||
-       [ "$(stat -c '%a:%u:%g' "$checked_release.attestation")" != 600:0:0 ] ||
+    if [ "$(test_path_metadata "$checked_directory")" != 755:0:0 ] ||
+       [ "$(test_path_metadata "$checked_release")" != 755:0:0 ] ||
+       [ "$(test_path_metadata "$checked_release.image")" != 644:0:0 ] ||
+       [ "$(test_path_metadata "$checked_release.attestation")" != 600:0:0 ] ||
        [ -e "$checked_release.login-uid" ] ||
        [ -L "$checked_release.login-uid" ]
     then
         echo "system install published incorrect release metadata" >&2
         exit 1
     fi
+}
+
+test_path_metadata()
+{
+    metadata_path=$1
+    printf '%s:%s:%s\n' \
+        "$(cclsh_stat_mode "$metadata_path")" \
+        "$(cclsh_stat_owner "$metadata_path")" \
+        "$(cclsh_stat_group "$metadata_path")"
+}
+
+test_paths_metadata()
+{
+    for metadata_path in "$@"; do
+        printf '%s:%s:%s:%s\n' \
+            "$(cclsh_stat_mode "$metadata_path")" \
+            "$(cclsh_stat_owner "$metadata_path")" \
+            "$(cclsh_stat_group "$metadata_path")" \
+            "$metadata_path"
+    done
 }
 
 fixture_bin=$temporary_directory/fixture-bin
@@ -170,7 +197,7 @@ then
     echo "system install accepted an untrusted destination" >&2
     exit 1
 fi
-if find "$unsafe_directory" -mindepth 1 -print -quit | grep -q .; then
+if find "$unsafe_directory" -mindepth 1 -print | grep -q .; then
     echo "rejected system destination was modified" >&2
     exit 1
 fi
@@ -189,21 +216,21 @@ then
 fi
 
 install_system_at "$install_directory" "$shells_file" >/dev/null
-release_one=$(realpath -e -- "$shell_path")
+release_one=$(cclsh_realpath_existing "$shell_path")
 assert_system_release "$release_one"
 if [ ! -L "$shell_path" ] || [ ! -L "$shell_path.image" ] ||
-   [ "$(stat -c '%u:%g' "$shell_path")" != 0:0 ] ||
-   [ "$(stat -c '%u:%g' "$shell_path.image")" != 0:0 ] ||
-   [ "$(realpath -e -- "$shell_path.image")" != "$release_one.image" ] ||
+   [ "$(cclsh_stat_owner "$shell_path"):$(cclsh_stat_group "$shell_path")" != 0:0 ] ||
+   [ "$(cclsh_stat_owner "$shell_path.image"):$(cclsh_stat_group "$shell_path.image")" != 0:0 ] ||
+   [ "$(cclsh_realpath_existing "$shell_path.image")" != "$release_one.image" ] ||
    [ "$(grep -Fxc -- "$shell_path" "$shells_file")" -ne 1 ]
 then
     echo "system install did not publish one stable shared shell" >&2
     exit 1
 fi
-runuser -u nobody -- test -x "$release_one"
-runuser -u nobody -- test -r "$release_one.image"
-runuser -u nobody -- "$shell_path" --version >/dev/null
-runuser -u nobody -- "$shell_path" -c 'exit 0'
+"$run_as_user" nobody test -x "$release_one"
+"$run_as_user" nobody test -r "$release_one.image"
+"$run_as_user" nobody "$shell_path" --version >/dev/null
+"$run_as_user" nobody "$shell_path" -c 'exit 0'
 
 release_count=$(
     find "$install_directory/.cclsh-releases" \
@@ -211,7 +238,7 @@ release_count=$(
 )
 install_system_at "$install_directory" "$shells_file" \
     CCLSH_PROBE_USER=nobody >/dev/null
-if [ "$(realpath -e -- "$shell_path")" != "$release_one" ] ||
+if [ "$(cclsh_realpath_existing "$shell_path")" != "$release_one" ] ||
    [ "$(
        find "$install_directory/.cclsh-releases" \
            -mindepth 1 -maxdepth 1 -type d | wc -l
@@ -225,7 +252,7 @@ fi
 install_system_at "$install_directory" "$shells_file" \
     CCLSH_LOGIN_USER=missing-legacy-user \
     CCLSH_PROBE_USER= >/dev/null
-if [ "$(realpath -e -- "$shell_path")" != "$release_one" ]; then
+if [ "$(cclsh_realpath_existing "$shell_path")" != "$release_one" ]; then
     echo "an empty explicit probe selected the legacy login user" >&2
     exit 1
 fi
@@ -239,7 +266,7 @@ EOF
 chmod 755 "$failing_getent_bin/getent"
 install_system_at "$install_directory" "$shells_file" \
     PATH="$failing_getent_bin:$PATH" >/dev/null
-if [ "$(realpath -e -- "$shell_path")" != "$release_one" ] ||
+if [ "$(cclsh_realpath_existing "$shell_path")" != "$release_one" ] ||
    [ "$(grep -Fxc -- "$shell_path" "$shells_file")" -ne 1 ]
 then
     echo "system install still depends on passwd enumeration" >&2
@@ -264,12 +291,11 @@ if command -v setpriv >/dev/null 2>&1; then
             CCLSH_BUILD_ATTESTATION="$attestation" \
             scripts/install >/dev/null
     alternate_group_release=$(
-        realpath -e -- "$alternate_group_directory/cclsh"
+        cclsh_realpath_existing "$alternate_group_directory/cclsh"
     )
     assert_system_release "$alternate_group_release"
-    if [ "$(stat -c '%u:%g' "$alternate_group_directory/cclsh")" != 0:0 ] ||
-       [ "$(stat -c '%u:%g' "$alternate_group_directory/cclsh.image")" != \
-         0:0 ] ||
+    if [ "$(cclsh_stat_owner "$alternate_group_directory/cclsh"):$(cclsh_stat_group "$alternate_group_directory/cclsh")" != 0:0 ] ||
+       [ "$(cclsh_stat_owner "$alternate_group_directory/cclsh.image"):$(cclsh_stat_group "$alternate_group_directory/cclsh.image")" != 0:0 ] ||
        [ "$(grep -Fxc -- "$alternate_group_directory/cclsh" \
              "$alternate_group_shells")" -ne 1 ]
     then
@@ -300,10 +326,10 @@ write_source_shell v2 none
 printf '%s\n' 'system image v2' >"$source_image"
 write_test_attestation "$attestation" "$source_shell" "$source_image"
 install_system_at "$install_directory" "$shells_file" >/dev/null
-release_two=$(realpath -e -- "$shell_path")
+release_two=$(cclsh_realpath_existing "$shell_path")
 assert_system_release "$release_two"
 if [ "$release_two" = "$release_one" ] || [ ! -f "$release_one" ] ||
-   [ "$(realpath -e -- "$shell_path.image")" != "$release_two.image" ] ||
+   [ "$(cclsh_realpath_existing "$shell_path.image")" != "$release_two.image" ] ||
    [ "$(grep -Fxc -- "$shell_path" "$shells_file")" -ne 1 ]
 then
     echo "system update did not retain and activate a matched release" >&2
@@ -328,10 +354,10 @@ printf '%s\n' 'reused system image' >"$source_image"
 write_test_attestation "$attestation" "$source_shell" "$source_image"
 install_system_at "$install_directory" "$shells_file" \
     CCLSH_PROBE_USER=nobody >/dev/null
-reused_release=$(realpath -e -- "$shell_path")
+reused_release=$(cclsh_realpath_existing "$shell_path")
 assert_system_release "$reused_release"
 reused_metadata=$(
-    stat -c '%a:%u:%g:%n' \
+    test_paths_metadata \
         "$(dirname "$reused_release")" \
         "$reused_release" \
         "$reused_release.image" \
@@ -344,9 +370,9 @@ then
     echo "system install accepted a failed reused-release probe" >&2
     exit 1
 fi
-if [ "$(realpath -e -- "$shell_path")" != "$reused_release" ] ||
+if [ "$(cclsh_realpath_existing "$shell_path")" != "$reused_release" ] ||
    [ "$(
-       stat -c '%a:%u:%g:%n' \
+       test_paths_metadata \
            "$(dirname "$reused_release")" \
            "$reused_release" \
            "$reused_release.image" \
@@ -363,7 +389,7 @@ before_rollback_kernel=$(readlink "$shell_path")
 before_rollback_image=$(readlink "$shell_path.image")
 rollback_shells_copy=$temporary_directory/rollback-shells.expected
 cp "$shells_file" "$rollback_shells_copy"
-rollback_shells_mode=$(stat -c %a "$shells_file")
+rollback_shells_mode=$(cclsh_stat_mode "$shells_file")
 write_source_shell v3 none
 printf '%s\n' 'system image v3' >"$source_image"
 write_test_attestation "$attestation" "$source_shell" "$source_image"
@@ -378,12 +404,12 @@ rollback_leftover=$(
         \( \( -type d -name '.cclsh-install.*' \) -o \
            \( -type d -name '.cclsh-transaction.*' \) -o \
            -name '.cclsh-rollback-*' \) \
-        -print -quit
+        -print
 )
 if [ "$(readlink "$shell_path")" != "$before_rollback_kernel" ] ||
    [ "$(readlink "$shell_path.image")" != "$before_rollback_image" ] ||
    ! cmp -s "$rollback_shells_copy" "$shells_file" ||
-   [ "$(stat -c %a "$shells_file")" != "$rollback_shells_mode" ] ||
+   [ "$(cclsh_stat_mode "$shells_file")" != "$rollback_shells_mode" ] ||
    [ -n "$rollback_leftover" ]
 then
     echo \
@@ -421,7 +447,7 @@ regular_leftover=$(
         \( \( -type d -name '.cclsh-install.*' \) -o \
            \( -type d -name '.cclsh-transaction.*' \) -o \
            -name '.cclsh-rollback-*' \) \
-        -print -quit
+        -print
 )
 if [ -L "$regular_shell" ] || [ -L "$regular_image" ] ||
    ! cmp -s "$regular_shell_copy" "$regular_shell" ||
@@ -479,7 +505,7 @@ printf '%s\n' /bin/sh "$legacy_shell" >"$legacy_shells"
 chmod 640 "$legacy_shells"
 
 legacy_metadata=$(
-    stat -c '%a:%u:%g:%n' \
+    test_paths_metadata \
         "$(dirname "$legacy_release")" \
         "$legacy_release" \
         "$legacy_release.image" \
@@ -506,21 +532,21 @@ then
     echo "owner-only install replaced a legacy login-managed shell" >&2
     exit 1
 fi
-if [ "$(realpath -e -- "$legacy_shell")" != "$legacy_release" ]; then
+if [ "$(cclsh_realpath_existing "$legacy_shell")" != "$legacy_release" ]; then
     echo "rejected owner-only install changed the legacy shell" >&2
     exit 1
 fi
 
 install_system_at "$legacy_directory" "$legacy_shells" \
     CCLSH_PROBE_USER=nobody >/dev/null
-migrated_release=$(realpath -e -- "$legacy_shell")
+migrated_release=$(cclsh_realpath_existing "$legacy_shell")
 assert_system_release "$migrated_release"
 if [ "$migrated_release" = "$legacy_release" ] ||
-   [ "$(realpath -e -- "$legacy_shell.image")" != \
+   [ "$(cclsh_realpath_existing "$legacy_shell.image")" != \
      "$migrated_release.image" ] ||
    [ "$(grep -Fxc -- "$legacy_shell" "$legacy_shells")" -ne 1 ] ||
    [ "$(
-       stat -c '%a:%u:%g:%n' \
+       test_paths_metadata \
            "$(dirname "$legacy_release")" \
            "$legacy_release" \
            "$legacy_release.image" \
@@ -537,9 +563,9 @@ then
     echo "system install did not safely migrate the legacy release" >&2
     exit 1
 fi
-runuser -u nobody -- test -x "$migrated_release"
-runuser -u nobody -- test -r "$migrated_release.image"
-runuser -u nobody -- "$legacy_shell" --version >/dev/null
+"$run_as_user" nobody test -x "$migrated_release"
+"$run_as_user" nobody test -r "$migrated_release.image"
+"$run_as_user" nobody "$legacy_shell" --version >/dev/null
 
 before_compatibility_release=$migrated_release
 env \
@@ -553,7 +579,7 @@ env \
     CCLSH_SHELLS_FILE="$legacy_shells" \
     CCLSH_BUILD_ATTESTATION="$attestation" \
     scripts/install >/dev/null
-if [ "$(realpath -e -- "$legacy_shell")" != \
+if [ "$(cclsh_realpath_existing "$legacy_shell")" != \
      "$before_compatibility_release" ] ||
    [ -e "$before_compatibility_release.login-uid" ] ||
    [ -L "$before_compatibility_release.login-uid" ] ||
@@ -573,7 +599,7 @@ then
     echo "owner-only install replaced a migrated system shell" >&2
     exit 1
 fi
-if [ "$(realpath -e -- "$legacy_shell")" != "$migrated_release" ]; then
+if [ "$(cclsh_realpath_existing "$legacy_shell")" != "$migrated_release" ]; then
     echo "rejected owner-only install changed the migrated shell" >&2
     exit 1
 fi

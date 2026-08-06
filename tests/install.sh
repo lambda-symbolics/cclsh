@@ -2,9 +2,16 @@
 # Regression checks for the privileged shell-registration boundary.
 set -eu
 cd "$(dirname "$0")/.."
+. scripts/platform
 
 if [ "$(id -u)" -eq 0 ]; then
-    temporary_directory=$(mktemp -d /run/cclsh-install-check.XXXXXX)
+    if ! scratch_parent=$(cclsh_root_scratch_parent); then
+        echo "install check: no safe root scratch directory" >&2
+        exit 1
+    fi
+    temporary_directory=$(
+        mktemp -d "$scratch_parent/cclsh-install-check.XXXXXX"
+    )
 else
     temporary_directory=$(
         mktemp -d "${TMPDIR:-/tmp}/cclsh-install-check.XXXXXX"
@@ -41,8 +48,7 @@ write_test_attestation()
         printf '%s\n' 'cclsh-login-build-v1'
         printf 'kernel-sha256 %s\n' "$kernel_hash"
         printf 'image-sha256 %s\n' "$image_hash"
-        for patch in patches/ccl-linux-xstate.patch patches/ccl-cclsh-argv.patch
-        do
+        for patch in $cclsh_required_ccl_patches; do
             patch_hash=$(scripts/file-sha256 "$patch")
             printf 'patch-sha256 %s %s\n' \
                 "$(basename "$patch")" \
@@ -77,8 +83,7 @@ install -d -m 700 "$install_directory"
     printf '%s\n' 'cclsh-login-build-v1'
     printf 'kernel-sha256 \n'
     printf 'image-sha256 \n'
-    for patch in patches/ccl-linux-xstate.patch patches/ccl-cclsh-argv.patch
-    do
+    for patch in $cclsh_required_ccl_patches; do
         printf 'patch-sha256 %s %s\n' \
             "$(basename "$patch")" \
             "$(scripts/file-sha256 "$patch")"
@@ -95,13 +100,17 @@ fi
 
 bad_hash_bin=$temporary_directory/bad-hash-bin
 mkdir "$bad_hash_bin"
+case "$cclsh_system_name" in
+    NetBSD) test_hash_program=sha256 ;;
+    *) test_hash_program=sha256sum ;;
+esac
 printf '%s\n' '#!/bin/sh' 'echo not-a-sha256-digest' \
-    >"$bad_hash_bin/sha256sum"
-chmod 755 "$bad_hash_bin/sha256sum"
+    >"$bad_hash_bin/$test_hash_program"
+chmod 755 "$bad_hash_bin/$test_hash_program"
 if PATH="$bad_hash_bin:$PATH" scripts/file-sha256 "$source_shell" \
      >/dev/null 2>&1
 then
-    echo "file hash accepted malformed sha256sum output" >&2
+    echo "file hash accepted malformed SHA-256 output" >&2
     exit 1
 fi
 
@@ -145,7 +154,7 @@ CCLSH_KERNEL_ARTIFACT="$source_shell" \
 CCLSH_IMAGE_ARTIFACT="$source_image" \
 CCLSH_INSTALL_DIRECTORY="$install_directory" \
 scripts/install >/dev/null
-if [ "$(stat -c %a "$install_directory")" != 700 ]; then
+if [ "$(cclsh_stat_mode "$install_directory")" != 700 ]; then
     echo "install changed the mode of an existing destination" >&2
     exit 1
 fi
@@ -153,7 +162,7 @@ if [ ! -L "$shell_path" ] || [ ! -L "$shell_path.image" ]; then
     echo "install did not activate stable symlinks" >&2
     exit 1
 fi
-first_release=$(realpath "$shell_path")
+first_release=$(cclsh_realpath_existing "$shell_path")
 if [ ! -f "$first_release.image" ]; then
     echo "install did not keep the release image beside its kernel" >&2
     exit 1
@@ -165,7 +174,7 @@ CCLSH_KERNEL_ARTIFACT="$source_shell" \
 CCLSH_IMAGE_ARTIFACT="$source_image" \
 CCLSH_INSTALL_DIRECTORY="$install_directory" \
 scripts/install >/dev/null
-second_release=$(realpath "$shell_path")
+second_release=$(cclsh_realpath_existing "$shell_path")
 if [ "$first_release" = "$second_release" ] || [ ! -f "$first_release" ]; then
     echo "install did not atomically retain and switch releases" >&2
     exit 1
@@ -221,7 +230,7 @@ then
     echo "install accepted a failed clean probe" >&2
     exit 1
 fi
-if [ "$(realpath "$shell_path")" != "$second_release" ]; then
+if [ "$(cclsh_realpath_existing "$shell_path")" != "$second_release" ]; then
     echo "failed install changed the active release" >&2
     exit 1
 fi
@@ -229,7 +238,7 @@ fi
 printf '%s\n' '#!/bin/sh' 'sleep 10' >"$source_shell"
 chmod 755 "$source_shell"
 set +e
-/usr/bin/timeout --preserve-status --signal=TERM --kill-after=1 3 \
+/usr/bin/timeout --preserve-status --signal=SIGTERM --kill-after=1 3 \
     env CCLSH_PROBE_TIMEOUT=0.2 CCLSH_PROBE_KILL_AFTER=0.2 \
         CCLSH_SKIP_BUILD=1 \
         CCLSH_KERNEL_ARTIFACT="$source_shell" \
@@ -244,7 +253,7 @@ then
     echo "install did not bound a hanging candidate: $hanging_status" >&2
     exit 1
 fi
-if [ "$(realpath "$shell_path")" != "$second_release" ]; then
+if [ "$(cclsh_realpath_existing "$shell_path")" != "$second_release" ]; then
     echo "hanging candidate changed the active release" >&2
     exit 1
 fi
@@ -278,11 +287,11 @@ fi
 concurrent_shells=$temporary_directory/concurrent-shells
 printf '%s\n' /bin/sh >"$concurrent_shells"
 chmod 640 "$concurrent_shells"
-/usr/bin/timeout --kill-after=1 5 \
+/usr/bin/timeout --kill-after=1 20 \
     scripts/register-shell "$shell_path" "$concurrent_shells" \
     >/dev/null &
 first_registrar=$!
-/usr/bin/timeout --kill-after=1 5 \
+/usr/bin/timeout --kill-after=1 20 \
     scripts/register-shell "$shell_path" "$concurrent_shells" \
     >/dev/null &
 second_registrar=$!
@@ -293,7 +302,7 @@ if [ "$(grep -Fxc -- "$shell_path" "$concurrent_shells")" -ne 1 ]; then
     exit 1
 fi
 
-if [ "$(stat -c %a "$shells_file")" != 640 ]; then
+if [ "$(cclsh_stat_mode "$shells_file")" != 640 ]; then
     echo "register-shell did not preserve the shells file mode" >&2
     exit 1
 fi
@@ -406,7 +415,7 @@ if [ "$(id -u)" -eq 0 ] && id nobody >/dev/null 2>&1; then
         echo "register-shell accepted an untrusted registry directory" >&2
         exit 1
     fi
-    if find "$unsafe_registry" -mindepth 1 -print -quit | grep -q .; then
+    if find "$unsafe_registry" -mindepth 1 -print | grep -q .; then
         echo "rejected registry directory was modified" >&2
         exit 1
     fi
@@ -435,15 +444,24 @@ if [ "$(id -u)" -eq 0 ] && id nobody >/dev/null 2>&1; then
     printf '%s\n' /bin/sh >"$unsafe_shells"
     chmod 664 "$unsafe_shells"
     chown nobody:$(id -g nobody) "$unsafe_shells"
-    unsafe_shells_metadata=$(stat -c '%a:%u:%g' "$unsafe_shells")
+    unsafe_shells_metadata=$(
+        printf '%s:%s:%s\n' \
+            "$(cclsh_stat_mode "$unsafe_shells")" \
+            "$(cclsh_stat_owner "$unsafe_shells")" \
+            "$(cclsh_stat_group "$unsafe_shells")"
+    )
     if scripts/register-shell "$shell_path" "$unsafe_shells" \
          >/dev/null 2>&1
     then
         echo "register-shell accepted an untrusted shells file" >&2
         exit 1
     fi
-    if [ "$(stat -c '%a:%u:%g' "$unsafe_shells")" != \
-         "$unsafe_shells_metadata" ] ||
+    if [ "$(
+           printf '%s:%s:%s\n' \
+               "$(cclsh_stat_mode "$unsafe_shells")" \
+               "$(cclsh_stat_owner "$unsafe_shells")" \
+               "$(cclsh_stat_group "$unsafe_shells")"
+         )" != "$unsafe_shells_metadata" ] ||
        grep -Fqx -- "$shell_path" "$unsafe_shells"
     then
         echo "rejected shells file was modified" >&2
@@ -457,7 +475,7 @@ if [ "$(id -u)" -eq 0 ] && id nobody >/dev/null 2>&1; then
         exit 1
     fi
     if grep -Fqx -- "$shell_path" "$safe_registry/shells" ||
-       find "$unsafe_lock_directory" -mindepth 1 -print -quit | grep -q .
+       find "$unsafe_lock_directory" -mindepth 1 -print | grep -q .
     then
         echo "rejected lock directory changed registration state" >&2
         exit 1
@@ -467,7 +485,12 @@ if [ "$(id -u)" -eq 0 ] && id nobody >/dev/null 2>&1; then
     printf '%s\n' unchanged >"$unsafe_lock"
     chmod 664 "$unsafe_lock"
     chown nobody:$(id -g nobody) "$unsafe_lock"
-    unsafe_lock_metadata=$(stat -c '%a:%u:%g' "$unsafe_lock")
+    unsafe_lock_metadata=$(
+        printf '%s:%s:%s\n' \
+            "$(cclsh_stat_mode "$unsafe_lock")" \
+            "$(cclsh_stat_owner "$unsafe_lock")" \
+            "$(cclsh_stat_group "$unsafe_lock")"
+    )
     if CCLSH_SHELLS_LOCK_FILE="$unsafe_lock" \
        scripts/register-shell "$shell_path" "$safe_registry/shells" \
            >/dev/null 2>&1
@@ -475,8 +498,12 @@ if [ "$(id -u)" -eq 0 ] && id nobody >/dev/null 2>&1; then
         echo "register-shell accepted an untrusted lock file" >&2
         exit 1
     fi
-    if [ "$(stat -c '%a:%u:%g' "$unsafe_lock")" != \
-         "$unsafe_lock_metadata" ] ||
+    if [ "$(
+           printf '%s:%s:%s\n' \
+               "$(cclsh_stat_mode "$unsafe_lock")" \
+               "$(cclsh_stat_owner "$unsafe_lock")" \
+               "$(cclsh_stat_group "$unsafe_lock")"
+         )" != "$unsafe_lock_metadata" ] ||
        [ "$(cat "$unsafe_lock")" != unchanged ] ||
        grep -Fqx -- "$shell_path" "$safe_registry/shells"
     then
@@ -522,8 +549,12 @@ if [ ! -x "$concurrent_directory/cclsh" ]; then
     echo "concurrent installs left no active shell" >&2
     exit 1
 fi
-concurrent_active=$(realpath -e "$concurrent_directory/cclsh")
-concurrent_active_image=$(realpath -e "$concurrent_directory/cclsh.image")
+concurrent_active=$(
+    cclsh_realpath_existing "$concurrent_directory/cclsh"
+)
+concurrent_active_image=$(
+    cclsh_realpath_existing "$concurrent_directory/cclsh.image"
+)
 if cmp -s "$concurrent_active" "$concurrent_one"; then
     concurrent_expected_image=$concurrent_image_one
 elif cmp -s "$concurrent_active" "$concurrent_two"; then
@@ -539,7 +570,7 @@ then
     exit 1
 fi
 if find "$concurrent_directory/.cclsh-releases" -mindepth 2 \
-     -type d -print -quit | grep -q .
+     -type d -print | grep -q .
 then
     echo "concurrent installs nested a staging directory in a release" >&2
     exit 1
