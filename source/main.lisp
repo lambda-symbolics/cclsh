@@ -351,7 +351,7 @@
 (defun shell--executable-path ()
   "Resolved path of the running executable, or NIL."
   (ignore-errors
-    (namestring (truename "/proc/self/exe"))))
+    (namestring (truename (ccl::kernel-path)))))
 
 (defun shell--path-references-executable-p (path executable-path)
   "True when PATH names EXECUTABLE-PATH, including through symlinks."

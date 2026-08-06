@@ -5,12 +5,12 @@
 ;;; in a job belongs to one process group. Blocking waitpid monitors
 ;;; publish stopped, continued and completed transitions through a
 ;;; shared event, so job control neither polls nor guesses process
-;;; state from Linux-specific interfaces.
+;;; state from host-specific interfaces.
 
 (in-package #:cclsh)
 
 (defconstant +job-sighup+ 1
-  "Linux SIGHUP signal number used when the shell exits.")
+  "SIGHUP signal number used when the shell exits.")
 
 ;;; The job table
 

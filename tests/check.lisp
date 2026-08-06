@@ -14,6 +14,52 @@
     (push (format nil "~a: expected ~s, got ~s" name expected actual)
           *check-failures*)))
 
+#+netbsd
+(dolist (case
+          (list
+           (list "NetBSD target pointer size"
+                 4 cclsh::+process-pointer-size+)
+           (list "NetBSD environ pointer size"
+                 4 cclsh::+environment-pointer-size+)
+           (list "NetBSD O_CLOEXEC"
+                 #x400000 cclsh::+process-o-cloexec+)
+           (list "NetBSD O_CREAT"
+                 #x200 cclsh::+process-o-create+)
+           (list "NetBSD O_TRUNC"
+                 #x400 cclsh::+process-o-truncate+)
+           (list "NetBSD O_APPEND"
+                 #x08 cclsh::+process-o-append+)
+           (list "NetBSD F_DUPFD_CLOEXEC"
+                 12 cclsh::+process-f-duplicate-cloexec+)
+           (list "NetBSD POSIX_SPAWN_SETSIGDEF"
+                 #x10 cclsh::+process-spawn-set-sigdefault+)
+           (list "NetBSD POSIX_SPAWN_SETSIGMASK"
+                 #x20 cclsh::+process-spawn-set-sigmask+)
+           (list "NetBSD WCONTINUED"
+                 #x10 cclsh::+process-wcontinued+)
+           (list "NetBSD SIGTSTP"
+                 18 cclsh::+process-sigtstp+)
+           (list "NetBSD process sigset_t size"
+                 16 cclsh::+process-sigset-size+)
+           (list "NetBSD termios VMIN offset"
+                 32 cclsh::+termios-vmin-offset+)
+           (list "NetBSD termios VTIME offset"
+                 33 cclsh::+termios-vtime-offset+)
+           (list "NetBSD raw c_lflag mask"
+                 #x188 cclsh::+termios-raw-lflag-mask+)
+           (list "NetBSD TIOCGWINSZ"
+                 #x40087468 cclsh::+winsize-ioctl+)
+           (list "NetBSD SIGCONT"
+                 19 cclsh::+sigcont+)
+           (list "NetBSD terminal sigset_t size"
+                 16 cclsh::+terminal-sigset-size+)
+           (list "NetBSD SIG_BLOCK operation"
+                 1 cclsh::+terminal-sig-block+)
+           (list "NetBSD SIG_SETMASK operation"
+                 3 cclsh::+terminal-sig-setmask+)))
+  (destructuring-bind (name expected actual) case
+    (check-equal name expected actual)))
+
 (defun check-history (&rest entries)
   "Return a history vector containing ENTRIES."
   (make-array (length entries)
@@ -33,7 +79,7 @@
   path)
 
 (defun check-set-locale (locale)
-  "Set Linux LC_ALL to LOCALE, or query it when LOCALE is NIL."
+  "Set the libc locale category used for diagnostics, or query it."
   (let ((pointer
           (if locale
               (ccl::with-utf-8-cstr (encoded locale)
@@ -63,7 +109,12 @@
 (defun check-path-mode (path)
   "Return PATH permissions as three or four octal digits."
   (string-trim '(#\Space #\Tab #\Newline #\Return)
-               (uiop:run-program (list "stat" "-c" "%a" path)
+               (uiop:run-program (list "stat"
+                                       #+netbsd "-f"
+                                       #-netbsd "-c"
+                                       #+netbsd "%Lp"
+                                       #-netbsd "%a"
+                                       path)
                                  :output ':string)))
 
 (defvar *check-stage-arguments* nil
@@ -975,7 +1026,7 @@
 (multiple-value-bind (text status)
     (cclsh:capture
       ("/usr/bin/printf" "nested-input")
-      (check-run-program "/usr/bin/cat"))
+      (check-run-program "/bin/cat"))
   (check-equal "run in builtin inherits pipeline input and output"
                "nested-input"
                text)
@@ -1455,10 +1506,103 @@
         (cclsh:setenv name old)
         (cclsh::unsetenv name))))
 
+(let* ((probe    "CCLSH_CHECK_EXACT_ENVIRONMENT")
+       (entries  (cclsh::environment-variables))
+       (bindings
+         (loop for entry in entries
+               for separator = (position #\= entry)
+               when separator
+                 collect (cons (subseq entry 0 separator)
+                               (subseq entry (1+ separator))))))
+  (unwind-protect
+      (progn
+        (cclsh::environment--replace-exact (list (cons probe "exact")))
+        (check-equal "exact environment replacement installs its binding"
+                     "exact"
+                     (cclsh:getenv probe))
+        (check-equal "exact environment replacement removes old bindings"
+                     nil
+                     (cclsh:getenv "PATH")))
+    (cclsh::environment--replace-exact bindings)))
+
+(let ((descriptor
+        (ccl::with-utf-8-cstr (path "/dev/null")
+          (ccl:external-call "open"
+                             :address path
+                             :int 1
+                             :int))))
+  (unwind-protect
+      (progn
+        (check-equal "descriptor containment probe opens a nonstandard fd"
+                     t
+                     (> descriptor 2))
+        (when (> descriptor 2)
+          (let ((process
+                  (cclsh::shell-process-spawn
+                   "/bin/sh"
+                   (list "-c"
+                         (format nil
+                                 "if ( : >&~d ) 2>/dev/null; then exit 91; else exit 0; fi"
+                                 descriptor)))))
+            (cclsh::shell-process-start-monitor process)
+            (ccl:join-process (cclsh::shell-process-monitor process))
+            (check-equal "spawned child cannot inherit an unrelated fd"
+                         0
+                         (cclsh::shell-process-exit-status process)))))
+    (cclsh::fd-close descriptor)))
+
+#+netbsd
+(let* ((configuration-symbol
+         'cclsh::process--configure-close-actions)
+       (original-configuration
+         (symbol-function configuration-symbol))
+       (predicted-descriptor
+         (ccl::with-utf-8-cstr (path "/dev/null")
+           (ccl:external-call "open"
+                              :address path
+                              :int 1
+                              :int)))
+       (raced-descriptor nil))
+  (cclsh::fd-close predicted-descriptor)
+  (unwind-protect
+      (progn
+        (check-equal "descriptor race probe finds a nonstandard fd"
+                     t
+                     (> predicted-descriptor 2))
+        (setf (symbol-function configuration-symbol)
+              (lambda (actions program)
+                (funcall original-configuration actions program)
+                (setf raced-descriptor
+                      (ccl::with-utf-8-cstr (path "/dev/null")
+                        (ccl:external-call "open"
+                                           :address path
+                                           :int 1
+                                           :int)))
+                (values)))
+        (let ((process
+                (cclsh::shell-process-spawn
+                 "/bin/sh"
+                 (list "-c"
+                       (format nil
+                               "if ( : >&~d ) 2>/dev/null; then exit 91; else exit 0; fi"
+                               predicted-descriptor)))))
+          (cclsh::shell-process-start-monitor process)
+          (ccl:join-process (cclsh::shell-process-monitor process))
+          (check-equal "descriptor race probe reuses the predicted fd"
+                       predicted-descriptor
+                       raced-descriptor)
+          (check-equal "spawn closes an fd opened after action construction"
+                       0
+                       (cclsh::shell-process-exit-status process))))
+    (setf (symbol-function configuration-symbol)
+          original-configuration)
+    (cclsh::fd-close raced-descriptor)))
+
 (let* ((old-locale (check-set-locale nil))
        (czech-locale (or (check-set-locale "cs_CZ.UTF-8")
                          (check-set-locale "cs_CZ.utf8")))
-       (expected "Adresář nebo soubor neexistuje"))
+       (expected #+netbsd "No such file or directory"
+                 #-netbsd "Adresář nebo soubor neexistuje"))
   (unwind-protect
       (when czech-locale
         (check-equal "UTF-8 libc error text"
@@ -1618,7 +1762,7 @@
         ;; startup callers stranded on the job's transition semaphore.
         (setf process
               (cclsh::shell-process-spawn
-               "/usr/bin/sleep" (list "30")
+               "/bin/sleep" (list "30")
                :process-group 0 :event event))
         (setf (cclsh::job-processes job) (list process)
               (cclsh::job-process-group job)

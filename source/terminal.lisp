@@ -5,37 +5,49 @@
 ;;; process group handling with tcsetpgrp. CCL runs external programs
 ;;; in their own process groups, so the shell must hand them the
 ;;; terminal for the duration of a foreground command and take it back
-;;; afterwards; the byte offsets below follow the glibc termios layout
-;;; on Linux.
+;;; afterwards. The byte offsets below follow the host termios layout.
 
 (in-package #:cclsh)
 
 (defconstant +termios-size+ 128
-  "Buffer size comfortably larger than glibc's struct termios.")
+  "Buffer size comfortably larger than the supported struct termios layouts.")
 
-(defconstant +termios-lflag-offset+ 12
-  "Byte offset of c_lflag in struct termios.")
+(defconstant +termios-lflag-offset+
+  12
+  "Byte offset of c_lflag in the supported struct termios layouts.")
 
-(defconstant +termios-vtime-offset+ 22
-  "Byte offset of c_cc[VTIME] in struct termios.")
+(defconstant +termios-vtime-offset+
+  #+netbsd 33
+  #-netbsd 22
+  "Byte offset of c_cc[VTIME] in the host struct termios.")
 
-(defconstant +termios-vmin-offset+ 23
-  "Byte offset of c_cc[VMIN] in struct termios.")
+(defconstant +termios-vmin-offset+
+  #+netbsd 32
+  #-netbsd 23
+  "Byte offset of c_cc[VMIN] in the host struct termios.")
 
-(defconstant +termios-raw-lflag-mask+ #x0b
-  "The ISIG, ICANON and ECHO bits of c_lflag.")
+(defconstant +termios-raw-lflag-mask+
+  #+netbsd #x188
+  #-netbsd #x0b
+  "The host ISIG, ICANON and ECHO bits of c_lflag.")
 
 (defconstant +tcsanow+ 0
   "tcsetattr optional action: apply immediately.")
 
-(defconstant +winsize-ioctl+ #x5413
-  "The TIOCGWINSZ ioctl request.")
+(defconstant +winsize-ioctl+
+  #+netbsd #x40087468
+  #-netbsd #x5413
+  "The host TIOCGWINSZ ioctl request.")
 
-(defconstant +sigcont+ 18
-  "Signal number of SIGCONT.")
+(defconstant +sigcont+
+  #+netbsd 19
+  #-netbsd 18
+  "Host signal number of SIGCONT.")
 
-(defconstant +sigtstp+ 20
-  "Signal number of SIGTSTP.")
+(defconstant +sigtstp+
+  #+netbsd 18
+  #-netbsd 20
+  "Host signal number of SIGTSTP.")
 
 (defconstant +sigttin+ 21
   "Signal number of SIGTTIN.")
@@ -43,23 +55,29 @@
 (defconstant +sigttou+ 22
   "Signal number of SIGTTOU.")
 
-(defconstant +terminal-sigset-size+ 128
-  "Size in bytes of glibc's sigset_t on Linux.")
+(defconstant +terminal-sigset-size+
+  #+netbsd 16
+  #-netbsd 128
+  "Size in bytes of the host's sigset_t.")
 
-(defconstant +terminal-sig-block+ 0
+(defconstant +terminal-sig-block+
+  #+netbsd 1
+  #-netbsd 0
   "PTHREAD_SIGMASK operation which adds signals to the caller's mask.")
 
-(defconstant +terminal-sig-setmask+ 2
+(defconstant +terminal-sig-setmask+
+  #+netbsd 3
+  #-netbsd 2
   "PTHREAD_SIGMASK operation which restores the calling thread's signal mask.")
 
 (defconstant +terminal-eintr+ 4
-  "Linux errno for an interrupted system call.")
+  "EINTR for the supported host ABIs.")
 
 (defconstant +terminal-esrch+ 3
-  "Linux errno for a vanished process group.")
+  "ESRCH for the supported host ABIs.")
 
 (defconstant +terminal-eperm+ 1
-  "Linux errno used when a process group has left the session.")
+  "EPERM for the supported host ABIs.")
 
 (define-condition terminal-control-error (error)
   ((operation

@@ -37,6 +37,11 @@
 (defconstant +package-environment-variable+ "CCLSH_PACKAGE"
   "Environment variable containing the current Lisp package name.")
 
+(defconstant +environment-pointer-size+
+  #+32-bit-target 4
+  #-32-bit-target 8
+  "Pointer size used by the target's environ vector.")
+
 (defun environment-name (designator)
   "Normalize an environment variable DESIGNATOR to a name string.
    Symbols and keywords use their symbol name."
@@ -59,17 +64,53 @@
                :code (ccl::get-errno)))))
   text)
 
+(defun environment--unset-string (name)
+  "Unset environment NAME while the caller holds the environment lock."
+  (ccl::with-utf-8-cstr (encoded name)
+    (unless (zerop (external-call #+netbsd "__unsetenv13"
+                                  #-netbsd "unsetenv"
+                                  :address encoded
+                                  :int))
+      (error 'environment-error
+             :operation "unset"
+             :name name
+             :code (ccl::get-errno))))
+  (values))
+
+(defun environment--entries ()
+  "Return live NAME=value entries while the caller holds the environment lock."
+  (let ((environ
+          (ccl:%get-ptr (ccl:foreign-symbol-address "environ")))
+        (entries nil))
+    (loop for index from 0
+          for entry = (ccl:%get-ptr
+                       environ (* index +environment-pointer-size+))
+          until (ccl:%null-ptr-p entry)
+          do (push (ccl::%get-utf-8-cstring entry) entries))
+    entries))
+
+(defun environment--clear ()
+  "Clear the libc environment while the caller holds the environment lock."
+  #-netbsd
+  (unless (zerop (external-call "clearenv" :int))
+    (error 'environment-error
+           :operation "clear"
+           :name "environment"
+           :code (ccl::get-errno)))
+  #+netbsd
+  (dolist (entry (environment--entries))
+    (let ((separator (position #\= entry)))
+      (when separator
+        (environment--unset-string (subseq entry 0 separator)))))
+  (values))
+
 (defun environment--replace-exact (bindings)
   "Replace the libc environment with string BINDINGS.
 BINDINGS contains (NAME . VALUE) pairs and the environment lock remains held
-from CLEARENV through the last SETENV call, so CCLSH subprocess snapshots
+from clearing through the last SETENV call, so CCLSH subprocess snapshots
 cannot observe a partially replaced environment."
   (ccl:with-lock-grabbed (*environment-lock*)
-    (unless (zerop (external-call "clearenv" :int))
-      (error 'environment-error
-             :operation "clear"
-             :name "environment"
-             :code (ccl::get-errno)))
+    (environment--clear)
     (dolist (binding bindings)
       (environment--set-string (car binding) (cdr binding))))
   (values))
@@ -123,12 +164,7 @@ per-process environment encoder."
   "Remove the environment variable NAME and return no values."
   (let ((name (environment-name name)))
     (ccl:with-lock-grabbed (*environment-lock*)
-      (ccl::with-utf-8-cstr (encoded name)
-        (unless (zerop (external-call "unsetenv" :address encoded :int))
-          (error 'environment-error
-                 :operation "unset"
-                 :name name
-                 :code (ccl::get-errno))))))
+      (environment--unset-string name)))
   (values))
 
 (defun env (name)
@@ -145,11 +181,4 @@ per-process environment encoder."
    in the same critical section so child-process snapshots stay coherent."
   (ccl:with-lock-grabbed (*environment-lock*)
     (environment--package-sync)
-    (let ((environ
-            (ccl:%get-ptr (ccl:foreign-symbol-address "environ")))
-          (entries nil))
-      (loop for index from 0
-            for entry = (ccl:%get-ptr environ (* index 8))
-            until (ccl:%null-ptr-p entry)
-            do (push (ccl::%get-utf-8-cstring entry) entries))
-      (sort entries #'string<))))
+    (sort (environment--entries) #'string<)))

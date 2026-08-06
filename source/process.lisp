@@ -9,73 +9,98 @@
 (in-package #:cclsh)
 
 (defconstant +process-foreign-structure-size+ 512
-  "Storage large enough for glibc's spawn attributes and file actions.")
+  "Storage large enough for the host's spawn attributes and file actions.")
 
-(defconstant +process-pointer-size+ 8
-  "Pointer size of the Linux x86-64 CCL target.")
+(defconstant +process-pointer-size+
+  #+32-bit-target 4
+  #-32-bit-target 8
+  "Pointer size of the CCL target.")
 
-(defconstant +process-o-cloexec+ #x80000
-  "Linux O_CLOEXEC open flag.")
+(defconstant +process-o-cloexec+
+  #+netbsd #x400000
+  #-netbsd #x80000
+  "O_CLOEXEC open flag for the host ABI.")
 
-(defconstant +process-o-create+ #x40
-  "Linux O_CREAT open flag.")
+(defconstant +process-o-create+
+  #+netbsd #x200
+  #-netbsd #x40
+  "O_CREAT open flag for the host ABI.")
 
-(defconstant +process-o-truncate+ #x200
-  "Linux O_TRUNC open flag.")
+(defconstant +process-o-truncate+
+  #+netbsd #x400
+  #-netbsd #x200
+  "O_TRUNC open flag for the host ABI.")
 
-(defconstant +process-o-append+ #x400
-  "Linux O_APPEND open flag.")
+(defconstant +process-o-append+
+  #+netbsd #x08
+  #-netbsd #x400
+  "O_APPEND open flag for the host ABI.")
 
 (defconstant +process-o-write-only+ 1
-  "Linux O_WRONLY open flag.")
+  "O_WRONLY open flag for the supported host ABIs.")
 
-(defconstant +process-f-duplicate-cloexec+ 1030
-  "Linux F_DUPFD_CLOEXEC fcntl operation.")
+(defconstant +process-f-duplicate-cloexec+
+  #+netbsd 12
+  #-netbsd 1030
+  "F_DUPFD_CLOEXEC fcntl operation for the host ABI.")
 
 (defconstant +process-spawn-set-pgroup+ #x02
   "POSIX_SPAWN_SETPGROUP attribute flag.")
 
-(defconstant +process-spawn-set-sigdefault+ #x04
+(defconstant +process-spawn-set-sigdefault+
+  #+netbsd #x10
+  #-netbsd #x04
   "POSIX_SPAWN_SETSIGDEF attribute flag.")
 
-(defconstant +process-spawn-set-sigmask+ #x08
+(defconstant +process-spawn-set-sigmask+
+  #+netbsd #x20
+  #-netbsd #x08
   "POSIX_SPAWN_SETSIGMASK attribute flag.")
 
 (defconstant +process-wuntraced+ #x02
-  "Linux WUNTRACED waitpid flag.")
+  "WUNTRACED waitpid flag for the supported host ABIs.")
 
-(defconstant +process-wcontinued+ #x08
-  "Linux WCONTINUED waitpid flag.")
+(defconstant +process-wcontinued+
+  #+netbsd #x10
+  #-netbsd #x08
+  "WCONTINUED waitpid flag for the host ABI.")
 
 (defconstant +process-sigint+ 2
-  "Linux SIGINT signal number.")
+  "SIGINT signal number for the supported host ABIs.")
 
 (defconstant +process-sigquit+ 3
-  "Linux SIGQUIT signal number.")
+  "SIGQUIT signal number for the supported host ABIs.")
 
 (defconstant +process-sigkill+ 9
-  "Linux SIGKILL signal number.")
+  "SIGKILL signal number for the supported host ABIs.")
 
 (defconstant +process-sigpipe+ 13
-  "Linux SIGPIPE signal number.")
+  "SIGPIPE signal number for the supported host ABIs.")
 
-(defconstant +process-sigtstp+ 20
-  "Linux SIGTSTP signal number.")
+(defconstant +process-sigtstp+
+  #+netbsd 18
+  #-netbsd 20
+  "SIGTSTP signal number for the host ABI.")
 
 (defconstant +process-sigttin+ 21
-  "Linux SIGTTIN signal number.")
+  "SIGTTIN signal number for the supported host ABIs.")
 
 (defconstant +process-sigttou+ 22
-  "Linux SIGTTOU signal number.")
+  "SIGTTOU signal number for the supported host ABIs.")
 
 (defconstant +process-eintr+ 4
-  "Linux EINTR error number.")
+  "EINTR error number for the supported host ABIs.")
 
 (defconstant +process-esrch+ 3
-  "Linux ESRCH error number.")
+  "ESRCH error number for the supported host ABIs.")
 
 (defconstant +process-echild+ 10
-  "Linux ECHILD error number.")
+  "ECHILD error number for the supported host ABIs.")
+
+(defconstant +process-sigset-size+
+  #+netbsd 16
+  #-netbsd 128
+  "Size in bytes of the host's sigset_t.")
 
 (define-condition process-spawn-error (error)
   ((program
@@ -318,8 +343,8 @@ permissions for a newly created file, before the process umask."
 
 (defun process--spawn-signals (attributes program)
   "Give the child ordinary shell signal defaults and an empty mask."
-  (ccl:%stack-block ((defaults 128)
-                     (mask 128))
+  (ccl:%stack-block ((defaults +process-sigset-size+)
+                     (mask +process-sigset-size+))
     (process--spawn-check
      (external-call "sigemptyset" :address defaults :int)
      program "clear child signal defaults")
@@ -369,6 +394,25 @@ permissions for a newly created file, before the process umask."
                   :int)
    program "enable spawn attributes"))
 
+(defun process--configure-close-actions (actions program)
+  "Configure ACTIONS to close nonstandard descriptors in the child."
+  #-netbsd
+  (process--spawn-check
+   (external-call "posix_spawn_file_actions_addclosefrom_np"
+                  :address actions
+                  :int 3
+                  :int)
+   program "close child file descriptors")
+  #+netbsd
+  (loop for descriptor from 3 below (external-call "getdtablesize" :int)
+        do (process--spawn-check
+            (external-call "posix_spawn_file_actions_addclose"
+                           :address actions
+                           :int descriptor
+                           :int)
+            program "close child file descriptor"))
+  (values))
+
 (defun process--configure-file-actions (actions &key fd0 fd1 fd2 program)
   "Configure initialized ACTIONS to install and contain the standard fds."
   (loop for source in (list fd0 fd1 fd2)
@@ -380,12 +424,7 @@ permissions for a newly created file, before the process umask."
                            :int target
                            :int)
             program "install child file descriptor"))
-  (process--spawn-check
-   (external-call "posix_spawn_file_actions_addclosefrom_np"
-                  :address actions
-                  :int 3
-                  :int)
-   program "close child file descriptors"))
+  (process--configure-close-actions actions program))
 
 (defun process--spawn-call (program arguments
                             &key environment process-group fd0 fd1 fd2)
