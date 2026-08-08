@@ -2,6 +2,7 @@
 # Run process, pipeline and interactive job-control regressions.
 set -eu
 cd "$(dirname "$0")/.."
+. scripts/platform
 
 if [ ! -x ./cclsh ]; then
     echo "cclsh integration: build ./cclsh first with scripts/build" >&2
@@ -12,7 +13,7 @@ if [ ! -s ./cclsh.image ]; then
     exit 2
 fi
 
-for program in script setsid timeout pkill ps tr grep stty seq yes head wc cat sleep printf rev realpath
+for program in chmod script timeout pkill ps tr grep stty seq yes head wc cat sleep printf rev realpath
 do
     if ! command -v "$program" >/dev/null 2>&1; then
         echo "cclsh integration: required program not found: $program" >&2
@@ -20,8 +21,15 @@ do
     fi
 done
 
+if command -v setsid >/dev/null 2>&1; then
+    CCLSH_TEST_SETSID=$(cclsh_realpath_existing "$(command -v setsid)")
+    export CCLSH_TEST_SETSID
+else
+    unset CCLSH_TEST_SETSID
+fi
+
 if find source cclsh.asd dependencies.lock -type f -newer ./cclsh.image \
-        -print -quit | grep -q .
+        -print | grep -q .
 then
     echo "cclsh integration: ./cclsh.image is stale; run scripts/build first" >&2
     exit 2
@@ -83,11 +91,11 @@ if ! command -v "$ccl_command" >/dev/null 2>&1; then
     echo "cclsh integration: CCL executable not found: $ccl_command" >&2
     exit 1
 fi
-CCLSH_TEST_CCL=$(realpath -e "$(command -v "$ccl_command")")
+CCLSH_TEST_CCL=$(cclsh_realpath_existing "$(command -v "$ccl_command")")
 export CCLSH_TEST_CCL
 set -- -n -b
 if [ -n "${CCLSH_CCL_IMAGE:-}" ]; then
-    CCLSH_TEST_CCL_IMAGE=$(realpath -e "$CCLSH_CCL_IMAGE")
+    CCLSH_TEST_CCL_IMAGE=$(cclsh_realpath_existing "$CCLSH_CCL_IMAGE")
     export CCLSH_TEST_CCL_IMAGE
     set -- -I "$CCLSH_CCL_IMAGE" "$@"
 fi

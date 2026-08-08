@@ -12,9 +12,12 @@
   "Counter used to give subprocess output files unique names.")
 
 (defparameter *integration-directory*
-  (format nil "/tmp/cclsh-integration-~d-~d/"
-          (ccl:external-call "getpid" :int)
-          (get-universal-time))
+  (namestring
+   (merge-pathnames
+    (format nil "cclsh-integration-~d-~d/"
+            (ccl:external-call "getpid" :int)
+            (get-universal-time))
+    (uiop:temporary-directory)))
   "Private temporary directory for this integration run.")
 
 (defparameter *integration-bin-directory*
@@ -22,6 +25,57 @@
 
 (defparameter *integration-binary*
   (namestring (truename "cclsh")))
+
+(defparameter *integration-setsid-program*
+  (let ((path (uiop:getenv "CCLSH_TEST_SETSID")))
+    (and path (plusp (length path)) path))
+  "System SETSID program, or NIL when CCL must create child sessions.")
+
+(defparameter *integration-ccl-program*
+  (or (uiop:getenv "CCLSH_TEST_CCL") "ccl")
+  "CCL executable used by integration helper processes.")
+
+(defparameter *integration-ccl-image*
+  (let ((path (uiop:getenv "CCLSH_TEST_CCL_IMAGE")))
+    (and path (plusp (length path)) path))
+  "Optional CCL image used by integration helper processes.")
+
+(defparameter *integration-pty-time-scale*
+  #+arm-target 4
+  #-arm-target 1
+  "Multiplier for interactive waits on slower ARM systems.")
+
+(defparameter *integration-sigtstp*
+  #+netbsd-target 18
+  #-netbsd-target 20
+  "SIGTSTP number used to interpret shell-style child status.")
+
+(defparameter *integration-sig-unblock*
+  #+netbsd-target 2
+  #-netbsd-target 1
+  "PTHREAD_SIGMASK operation which removes signals from the caller's mask.")
+
+
+;;;; -- Private child sessions --
+
+(defun integration-install-session-fallback ()
+  "Make CCL:RUN-PROGRAM children session leaders when SETSID is absent."
+  (unless *integration-setsid-program*
+    (ccl:advise ccl::exec-with-io-redirection
+        (when (= -1 (ccl:external-call "setsid" :int))
+          (ccl:external-call "_exit" :int 125))
+      :when :before
+      :name :integration-private-session))
+  (values))
+
+(defun integration-private-session-command (program arguments)
+  "Return a launcher and arguments which run PROGRAM in a new session."
+  (if *integration-setsid-program*
+      (values *integration-setsid-program*
+              (list* "--wait" program arguments))
+      (values program arguments)))
+
+(integration-install-session-fallback)
 
 
 ;;;; -- Small assertions --
@@ -136,6 +190,27 @@
       (let ((end (read-sequence text stream)))
         (if (= end (length text)) text (subseq text 0 end))))))
 
+(defun integration-read-positive-integer-file (path)
+  "Return PATH's complete positive integer, or NIL while it is unavailable."
+  (when (probe-file path)
+    (handler-case
+        (let ((text
+                (string-trim '(#\space #\tab #\newline #\return)
+                             (integration-read-file path))))
+          (and (plusp (length text))
+               (every #'digit-char-p text)
+               (parse-integer text)))
+      (serious-condition () nil))))
+
+(defun integration-wait-session-id (path)
+  "Wait for PATH to contain a complete session id and return it."
+  (loop repeat 500
+        for session-id = (integration-read-positive-integer-file path)
+        when session-id
+          return session-id
+        do (sleep 0.01)
+        finally (integration-fail "session id was not published to ~a" path)))
+
 (defun integration-write-file (path contents)
   "Write CONTENTS as UTF-8 text to PATH."
   (ensure-directories-exist path)
@@ -171,7 +246,7 @@
   "Create executable test program NAME with CONTENTS and return its path."
   (let ((path (concatenate 'string *integration-bin-directory* name)))
     (integration-write-file path contents)
-    (let ((process (ccl:run-program "/usr/bin/chmod" (list "755" path)
+    (let ((process (ccl:run-program "chmod" (list "755" path)
                                     :input nil :output nil :error nil
                                     :wait t)))
       (multiple-value-bind (state code)
@@ -281,7 +356,8 @@ printf '__RUN_READER_VALUE__%s\\n' \"$line\"
    "run-line-counter"
    "#!/bin/sh
 count=$(wc -l)
-printf '__RUN_READER_COUNT__%s\\n' \"$count\"
+set -- $count
+printf '__RUN_READER_COUNT__%s\\n' \"$1\"
 ")
   (integration-write-program
    "modecheck"
@@ -341,7 +417,7 @@ sidfile=$1
 seconds=$2
 shift 2
 printf '%s\\n' $$ > \"$sidfile\"
-exec /usr/bin/timeout --signal=TERM --kill-after=1 \"$seconds\" \"$@\"
+exec /usr/bin/timeout -k 1 \"$seconds\" \"$@\"
 ")
   (integration-write-program
    "run-in-directory"
@@ -351,11 +427,35 @@ shift
 cd \"$directory\" || exit 125
 exec \"$@\"
 ")
-  (integration-write-program
-   "login-cclsh"
-   "#!/usr/bin/env bash
-exec -a -cclsh \"$CCLSH_TEST_BINARY\" \"$@\"
-")
+  (let ((launcher (integration-path "login-cclsh.lisp")))
+    (integration-write-file
+     launcher
+     (format nil
+             "(ccl::with-utf-8-cstr (program ~s)~%
+                (ccl::with-string-vector~%
+                    (arguments~%
+                      (list \"-cclsh\" \"-c\" \"--no-avx\")~%
+                      :utf-8)~%
+                  (ccl:external-call~%
+                   \"execv\" :address program :address arguments :int)))~%
+              (ccl:quit 127)~%"
+             *integration-binary*))
+    (integration-write-program
+     "login-cclsh"
+     (format nil
+             "#!/bin/sh
+if [ \"$#\" -ne 2 ] || [ \"$1\" != -c ] || [ \"$2\" != --no-avx ]; then
+    exit 125
+fi
+exec ~{~a~^ ~}
+"
+             (mapcar
+              #'integration-shell-quote
+              (append
+               (list *integration-ccl-program*)
+               (when *integration-ccl-image*
+                 (list "-I" *integration-ccl-image*))
+               (list "-n" "-b" "-l" launcher))))))
   (integration-write-program
    "--no-avx"
    "#!/bin/sh
@@ -368,6 +468,18 @@ sidfile=$1
 shift
 printf '%s\\n' $$ > \"$sidfile\"
 exec /usr/bin/script \"$@\"
+")
+  (integration-write-program
+   "pty-child-session"
+   "#!/bin/sh
+sidfile=$1
+shift
+session=$(ps -o sid= -p $$ | tr -d ' ')
+case \"$session\" in
+    ''|*[!0-9]*) exit 125;;
+esac
+printf '%s\\n' \"$session\" > \"$sidfile\"
+exec \"$@\"
 ")
   (integration-write-program
    "mark-and-sleep"
@@ -471,6 +583,22 @@ exit 0
   "Kill every surviving process in SESSION-ID."
   (integration-signal-session session-id "KILL"))
 
+(defun integration-cleanup-session-ids (session-ids)
+  "Terminate every distinct non-NIL session in SESSION-IDS."
+  (let ((session-ids (remove-duplicates (remove nil session-ids))))
+    (dolist (session-id session-ids)
+      (integration-signal-session session-id "TERM"))
+    (when session-ids
+      (sleep 0.05))
+    (dolist (session-id session-ids)
+      (integration-kill-session session-id)))
+  (values))
+
+(defun integration-cleanup-session-paths (paths)
+  "Terminate sessions whose ids have been published in PATHS."
+  (integration-cleanup-session-ids
+   (mapcar #'integration-read-positive-integer-file paths)))
+
 (defun integration-process-status (process)
   "Return conventional integer status for completed PROCESS."
   (multiple-value-bind (state code)
@@ -484,13 +612,19 @@ exit 0
                                   &key
                                     (timeout 10)
                                     input
+                                    input-text
+                                    cleanup-session-paths
                                     (program *integration-binary*)
                                     directory
                                     (environment (integration-environment)))
   "Run PROGRAM with ARGUMENTS in a private, bounded session.
    PROGRAM defaults to saved cclsh. INPUT is NIL or a pathname suitable
-   for CCL:RUN-PROGRAM. DIRECTORY optionally changes the child's working
-   directory. ENVIRONMENT defaults to the isolated integration environment."
+   for CCL:RUN-PROGRAM. INPUT-TEXT instead feeds text through an open pipe.
+   CLEANUP-SESSION-PATHS name nested sessions which must not escape cleanup.
+   DIRECTORY optionally changes the child's working directory. ENVIRONMENT
+   defaults to the isolated integration environment."
+  (when (and input input-text)
+    (integration-fail "INPUT and INPUT-TEXT are mutually exclusive"))
   (let ((output-path (integration-output-path "out"))
         (error-path  (integration-output-path "err"))
         (session-path (integration-output-path "sid"))
@@ -499,38 +633,40 @@ exit 0
         (completed nil))
     (unwind-protect
         (progn
-          (setf process
-                (ccl:run-program
-                 "/usr/bin/setsid"
-                 (append
-                  (list "--wait"
-                        (concatenate 'string *integration-bin-directory*
-                                     "bounded-session")
-                        session-path
-                        (princ-to-string timeout))
-                  (when directory
-                    (list (concatenate 'string *integration-bin-directory*
-                                       "run-in-directory")
-                          directory))
-                  (list program)
-                  arguments)
-                 :input input
-                 :output output-path
-                 :if-output-exists ':supersede
-                 :error error-path
-                 :if-error-exists ':supersede
-                 :env environment
-                 :wait nil
-                 :external-format ':utf-8))
+          (multiple-value-bind (launcher launcher-arguments)
+              (integration-private-session-command
+               (concatenate 'string *integration-bin-directory*
+                            "bounded-session")
+               (append
+                (list session-path (princ-to-string timeout))
+                (when directory
+                  (list (concatenate 'string *integration-bin-directory*
+                                     "run-in-directory")
+                        directory))
+                (list program)
+                arguments))
+            (setf process
+                  (ccl:run-program
+                   launcher launcher-arguments
+                   :input (if input-text ':stream input)
+                   :output output-path
+                   :if-output-exists ':supersede
+                   :error error-path
+                   :if-error-exists ':supersede
+                   :env environment
+                   :wait nil
+                   :external-format ':utf-8)))
+          (when input-text
+            (write-string input-text
+                          (ccl:external-process-input-stream process))
+            (force-output (ccl:external-process-input-stream process)))
           (setf completed
                 (ccl:timed-wait-on-semaphore
                  (ccl::external-process-completed process)
                  (+ timeout 3)))
           (when (probe-file session-path)
             (setf session-id
-                  (parse-integer
-                   (string-trim '(#\space #\tab #\newline #\return)
-                                (integration-read-file session-path)))))
+                  (integration-read-positive-integer-file session-path)))
           (unless completed
             (when session-id
               (integration-kill-session session-id))
@@ -551,6 +687,10 @@ exit 0
                                ""))))
       (when (and process (not completed) session-id)
         (integration-kill-session session-id))
+      (when (and process input-text)
+        (ignore-errors
+          (close (ccl:external-process-input-stream process))))
+      (integration-cleanup-session-paths cleanup-session-paths)
       (ignore-errors (delete-file output-path))
       (ignore-errors (delete-file error-path))
       (ignore-errors (delete-file session-path)))))
@@ -608,6 +748,9 @@ exit 0
                                  (user-homedir-pathname)))
                (integration-fail "Quicklisp setup.lisp is unavailable")))
          (input (integration-path "library-host.input"))
+         (program (integration-path "library-host.lisp"))
+         (child-session-path
+           (integration-output-path "library-pty-sid"))
          (clinedi-directory
            (let ((override (uiop:getenv "CCLSH_CLINEDI_SOURCE")))
              (if (and override (plusp (length override)))
@@ -627,16 +770,18 @@ exit 0
          (ccl-command (or (uiop:getenv "CCLSH_TEST_CCL") "ccl"))
          (ccl-image (uiop:getenv "CCLSH_TEST_CCL_IMAGE"))
          (ccl-command-line
-           (format nil "~{~a~^ ~}"
-                   (mapcar
-                    #'integration-shell-quote
-                    (append (list ccl-command)
-                            (when (and ccl-image
-                                       (plusp (length ccl-image)))
-                              (list "-I" ccl-image))
-                            (list "-n"))))))
+           (integration-recorded-pty-command-line
+            child-session-path
+            (format nil "~{~a~^ ~}"
+                    (mapcar
+                     #'integration-shell-quote
+                     (append (list ccl-command)
+                             (when (and ccl-image
+                                        (plusp (length ccl-image)))
+                               (list "-I" ccl-image))
+                             (list "-n")))))))
     (integration-write-file
-     input
+     program
      (format nil
              "(require :asdf)~%
               (ccl:%stack-block ((signals 128))~%
@@ -649,7 +794,7 @@ exit 0
                                  :address signals :int 22 :int))~%
                          (zerop (ccl:external-call~%
                                  \"pthread_sigmask\"~%
-                                 :int 1~%
+                                 :int ~d~%
                                  :address signals~%
                                  :address (ccl:%null-ptr)~%
                                  :int)))~%
@@ -719,15 +864,21 @@ exit 0
                                  (eql before (sigttou-blocked-p)))~%
                             (sigttou-default-p)))))~%
               (ccl:quit 0)~%"
+             *integration-sig-unblock*
              (namestring setup)
              (namestring cl-colorist-asd)
              (namestring clinedi-asd)
              (namestring cclsh-asd)))
+    (integration-write-file
+     input
+     (format nil "(load ~s :external-format :utf-8)~%" program))
     (let* ((result
              (integration-run-arguments
-              (list "-qefc" ccl-command-line "/dev/null")
+              (list "-q" "-e" "-f" "-c"
+                    ccl-command-line "/dev/null")
               :program "/usr/bin/script"
-              :input input
+              :input-text (integration-read-file input)
+              :cleanup-session-paths (list child-session-path)
               :timeout 30))
            (output (direct-result-output result)))
       (integration-require-success result "Quickloaded CCLSH pipeline")
@@ -1054,7 +1205,8 @@ false
              (result
                (integration-run-arguments
                 (list "-c" "--no-avx")
-                :program program)))
+                :program program
+                :timeout 30)))
         (integration-require-success result context)
         (integration-ensure
          (integration-contains-p "__RESERVED_COMMAND_OPERAND__"
@@ -1186,7 +1338,8 @@ false
                                           :test #'string=))
                              t)))
                  (format t \"__BAKED_QUICKLISP__~s:~s__~%\"
-                         available portable)))"))
+                         available portable)))"
+            :timeout 30))
          (output (direct-result-output result)))
     (integration-require-success result "baked Quicklisp")
     (integration-ensure
@@ -1569,7 +1722,10 @@ false
                             (relay-lines)
                             (wc \"-l\"))
                  (format t \"__LARGE_COUNT__~a__LARGE_STATUS__~d~%\"
-                         text status)))"
+                         (string-trim
+                          '(#\\space #\\tab #\\newline #\\return)
+                          text)
+                         status)))"
             :timeout 20))
          (output (direct-result-output result)))
     (integration-require-success result "large builtin stream")
@@ -2051,9 +2207,11 @@ false
 ;;;; -- Interactive PTY driver --
 
 (defstruct integration-session
-  "One cclsh instance running below util-linux SCRIPT's PTY."
+  "One cclsh instance running below SCRIPT's PTY."
   process
   session-id
+  child-session-id
+  child-session-path
   input
   output
   reader-process
@@ -2075,7 +2233,16 @@ false
                  (write-char char stream)))
     (write-char #\' stream)))
 
-(defun integration-session-command-line ()
+(defun integration-recorded-pty-command-line (session-path command-line)
+  "Wrap COMMAND-LINE so its PTY child records its session id."
+  (format nil "~a ~a ~a"
+          (integration-shell-quote
+           (concatenate 'string *integration-bin-directory*
+                        "pty-child-session"))
+          (integration-shell-quote session-path)
+          command-line))
+
+(defun integration-session-command-line (session-path)
   "Return SCRIPT's shell command for the isolated cclsh session."
   (let ((parts
           (append (list "/usr/bin/env" "-i")
@@ -2084,7 +2251,9 @@ false
                           (integration-environment-replace
                            (cons "CCLSH_SAFE" "")))
                   (list *integration-binary*))))
-    (format nil "~{~a~^ ~}" (mapcar #'integration-shell-quote parts))))
+    (integration-recorded-pty-command-line
+     session-path
+     (format nil "~{~a~^ ~}" (mapcar #'integration-shell-quote parts)))))
 
 (defun integration-session-read-loop (session)
   "Drain SESSION's PTY transcript until SCRIPT closes it."
@@ -2113,7 +2282,9 @@ false
 (defun integration-session-wait (session marker &key (start 0) (timeout 8))
   "Wait for MARKER in SESSION at or after START and return its position."
   (let ((deadline (+ (get-internal-real-time)
-                     (* timeout internal-time-units-per-second))))
+                     (* timeout
+                        *integration-pty-time-scale*
+                        internal-time-units-per-second))))
     (loop
       (let* ((text (integration-session-text session))
              (found (search marker text :start2 (min start (length text)))))
@@ -2125,6 +2296,29 @@ false
           (when (<= remaining 0)
             (integration-fail
              "timed out waiting for ~s; transcript tail:~%~a"
+             marker (integration-tail text)))
+          (ccl:timed-wait-on-semaphore
+           (integration-session-event session) (min remaining 0.25)))))))
+
+(defun integration-session-wait-clean (session marker
+                                       &key (start 0) (timeout 8))
+  "Wait for visible MARKER in SESSION at or after raw offset START."
+  (let ((deadline (+ (get-internal-real-time)
+                     (* timeout
+                        *integration-pty-time-scale*
+                        internal-time-units-per-second))))
+    (loop
+      (let* ((text (integration-session-text session))
+             (tail (subseq text (min start (length text))))
+             (found (search marker (integration-clean-text tail))))
+        (when found
+          (return found))
+        (let ((remaining
+                (/ (- deadline (get-internal-real-time))
+                   internal-time-units-per-second)))
+          (when (<= remaining 0)
+            (integration-fail
+             "timed out waiting for visible ~s; transcript tail:~%~a"
              marker (integration-tail text)))
           (ccl:timed-wait-on-semaphore
            (integration-session-event session) (min remaining 0.25)))))))
@@ -2153,6 +2347,34 @@ false
                                                   :timeout timeout)))
       (subseq (integration-session-text session) start end))))
 
+(defun integration-session-multiline-command (session text
+                                              &key (timeout 8))
+  "Run multiline TEXT without overflowing a bounded PTY input queue.
+   Each physical line must become visible and its newline must be accepted
+   before the next line is sent."
+  (let* ((start (integration-session-position session))
+         (lines (uiop:split-string text :separator (list #\newline)))
+         (last-line (1- (length lines))))
+    (loop for line in lines
+          for index from 0
+          for line-start = (integration-session-position session)
+          for visible = (string-trim '(#\space #\tab #\return) line)
+          do (integration-session-send session line)
+             (when (plusp (length visible))
+               (integration-session-wait-clean
+                session visible :start line-start :timeout timeout))
+             (if (= index last-line)
+                 (integration-session-send session (string #\newline))
+                 (let ((newline-start
+                         (integration-session-position session)))
+                   (integration-session-send session (string #\newline))
+                   (integration-session-wait
+                    session (string #\newline)
+                    :start newline-start :timeout timeout))))
+    (let ((end (integration-session-await-prompt session start
+                                                  :timeout timeout)))
+      (subseq (integration-session-text session) start end))))
+
 (defun integration-session-stop (session)
   "Stop SESSION and close its streams, even after a failed check."
   (when session
@@ -2160,19 +2382,17 @@ false
       (integration-session-send-line session "stty echo"))
     (ignore-errors
       (integration-session-send-line session "exit"))
-    (unless (ccl:timed-wait-on-semaphore
-             (ccl::external-process-completed
-              (integration-session-process session)) 2)
-      (integration-signal-session
-       (integration-session-session-id session) "TERM")
-      (unless (ccl:timed-wait-on-semaphore
-               (ccl::external-process-completed
-                (integration-session-process session)) 1)
-        (integration-kill-session
-         (integration-session-session-id session))
-        (ccl:timed-wait-on-semaphore
-         (ccl::external-process-completed
-          (integration-session-process session)) 2)))
+    (ccl:timed-wait-on-semaphore
+     (ccl::external-process-completed
+      (integration-session-process session)) 2)
+    (integration-cleanup-session-ids
+     (list (or (integration-session-child-session-id session)
+               (integration-read-positive-integer-file
+                (integration-session-child-session-path session)))
+           (integration-session-session-id session)))
+    (ccl:timed-wait-on-semaphore
+     (ccl::external-process-completed
+      (integration-session-process session)) 2)
     (ignore-errors (close (integration-session-input session)))
     (ignore-errors (close (integration-session-output session)))
     (ignore-errors
@@ -2183,48 +2403,50 @@ false
   "Start an isolated interactive saved-image session below a real PTY."
   (ignore-errors (delete-file (integration-path "prompt-count")))
   (let ((session-path (integration-output-path "pty-sid"))
+        (child-session-path (integration-output-path "pty-child-sid"))
         (session nil)
         (ready nil))
     (unwind-protect
-        (let* ((process
-                 (ccl:run-program
-                  "/usr/bin/setsid"
-                  (list "--wait"
-                        (concatenate 'string *integration-bin-directory*
-                                     "pty-session")
-                        session-path
-                        "-qefc" (integration-session-command-line)
-                        "/dev/null")
-                  :input ':stream
-                  :output ':stream
-                  :error ':output
-                  :wait nil
-                  :external-format ':utf-8)))
-          (setf session
-                (make-integration-session
-                 :process process
-                 :session-id (ccl:external-process-id process)
-                 :input (ccl:external-process-input-stream process)
-                 :output (ccl:external-process-output-stream process)))
-          (loop repeat 100
-                until (probe-file session-path)
-                do (sleep 0.01))
-          (when (probe-file session-path)
+        (multiple-value-bind (launcher launcher-arguments)
+            (integration-private-session-command
+             (concatenate 'string *integration-bin-directory*
+                          "pty-session")
+             (list session-path
+                   "-q" "-e" "-f" "-c"
+                   (integration-session-command-line child-session-path)
+                   "/dev/null"))
+          (let* ((process
+                   (ccl:run-program
+                    launcher launcher-arguments
+                    :input ':stream
+                    :output ':stream
+                    :error ':output
+                    :wait nil
+                    :external-format ':utf-8)))
+            (setf session
+                  (make-integration-session
+                   :process process
+                   :session-id (ccl:external-process-id process)
+                   :child-session-path child-session-path
+                   :input (ccl:external-process-input-stream process)
+                   :output (ccl:external-process-output-stream process)))
             (setf (integration-session-session-id session)
-                  (parse-integer
-                   (string-trim '(#\space #\tab #\newline #\return)
-                                (integration-read-file session-path)))))
-          (setf (integration-session-reader-process session)
-                (ccl:process-run-function
-                 "cclsh integration PTY reader"
-                 (lambda () (integration-session-read-loop session))))
-          (integration-session-wait session "__CCLSH_PROMPT_1__" :timeout 12)
-          (setf (integration-session-prompt-number session) 1)
-          (setf ready t)
-          session)
+                  (integration-wait-session-id session-path))
+            (setf (integration-session-child-session-id session)
+                  (integration-wait-session-id child-session-path))
+            (setf (integration-session-reader-process session)
+                  (ccl:process-run-function
+                   "cclsh integration PTY reader"
+                   (lambda () (integration-session-read-loop session))))
+            (integration-session-wait session "__CCLSH_PROMPT_1__"
+                                      :timeout 12)
+            (setf (integration-session-prompt-number session) 1)
+            (setf ready t)
+            session))
       (unless ready
         (integration-session-stop session))
-      (ignore-errors (delete-file session-path)))))
+      (ignore-errors (delete-file session-path))
+      (ignore-errors (delete-file child-session-path)))))
 
 (defun integration-session-interrupt (session character start &key (timeout 8))
   "Send control CHARACTER, then return output through the next prompt."
@@ -2465,8 +2687,10 @@ false
                                        (integration-clean-text stopped))
                "Ctrl-Z did not announce a stopped job: ~a"
                (integration-tail stopped))))
-          (integration-ensure (= 148 (integration-session-last-status session))
-                              "Ctrl-Z pipeline status was not 148")
+          (integration-ensure
+           (= (+ 128 *integration-sigtstp*)
+              (integration-session-last-status session))
+           "Ctrl-Z pipeline status did not match SIGTSTP")
           (let ((jobs (integration-session-command session "jobs")))
             (integration-ensure
              (integration-contains-p "Stopped" (integration-clean-text jobs))
@@ -2537,7 +2761,9 @@ false
     (unwind-protect
         (progn
           (setf session (integration-session-start))
-          (integration-session-command
+          ;; This definition exceeds NetBSD's default 1024-byte PTY input
+          ;; queue, so pace it at observable physical-line boundaries.
+          (integration-session-multiline-command
            session
            "(progn
               (defparameter *integration-builtin-count* 0)
@@ -2583,8 +2809,9 @@ false
                "Ctrl-Z did not stop the builtin pipeline: ~a"
                (integration-tail stopped))))
           (integration-ensure
-           (= 148 (integration-session-last-status session))
-           "stopped builtin pipeline status was not 148")
+           (= (+ 128 *integration-sigtstp*)
+              (integration-session-last-status session))
+           "stopped builtin pipeline status did not match SIGTSTP")
 
           ;; The Lisp worker itself must be suspended, not merely blocked
           ;; behind the stopped external consumer.
@@ -2679,8 +2906,9 @@ false
                "Ctrl-Z did not stop pipeline-aware run: ~a"
                (integration-tail stopped))))
           (integration-ensure
-           (= 148 (integration-session-last-status session))
-           "pipeline-aware run stop status was not 148")
+           (= (+ 128 *integration-sigtstp*)
+              (integration-session-last-status session))
+           "pipeline-aware run stop status did not match SIGTSTP")
           (let ((jobs (integration-session-command session "jobs")))
             (integration-ensure
              (integration-contains-p "Stopped" (integration-clean-text jobs))
