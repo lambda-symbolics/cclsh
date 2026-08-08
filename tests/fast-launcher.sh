@@ -130,6 +130,20 @@ wait_for_no_daemon()
     return 1
 }
 
+wait_for_transcript()
+{
+    transcript_marker=$1
+    transcript_attempt=0
+    while [ "$transcript_attempt" -lt 500 ]; do
+        if grep -Fq "$transcript_marker" "$typescript" 2>/dev/null; then
+            return 0
+        fi
+        transcript_attempt=$((transcript_attempt + 1))
+        sleep 0.02
+    done
+    return 1
+}
+
 
 # An absent daemon must make every noninteractive form an exact direct exec.
 daemon_command stop >/dev/null 2>&1 || true
@@ -292,25 +306,31 @@ interactive_error=$temporary_directory/interactive.stderr
 typescript=$temporary_directory/interactive.typescript
 set +e
 (
+    # Clinedi may still be repainting a long scripted line. Wait for output
+    # markers so control characters reach the intended foreground job.
     printf '(run "%s" "daemon" "status")\n' "$fast_shell"
     printf '(run "%s")\n' "$context_probe"
     printf '(format t "__FAST_ARGV_~a__~%%" '
     printf '(and (= (length ccl:*command-line-argument-list*) 1) '
     printf '(null ccl:*unprocessed-command-line-arguments*)))\n'
+    wait_for_transcript '__FAST_ARGV_T__' || exit 125
     printf '(run "/usr/bin/sleep" "10")\n'
     sleep 0.5
     printf '\003'
     sleep 0.2
     printf '(format t "__FAST_AFTER_~a__~%%" "INTERRUPT")\n'
+    wait_for_transcript '__FAST_AFTER_INTERRUPT__' || exit 125
     printf '(run "/usr/bin/sleep" "10")\n'
     sleep 0.5
     printf '\032'
     sleep 0.2
+    wait_for_transcript 'Stopped' || exit 125
     printf 'fg\n'
     sleep 0.5
     printf '\003'
     sleep 0.2
     printf '(format t "__FAST_AFTER_~a__~%%" "SUSPEND")\n'
+    wait_for_transcript '__FAST_AFTER_SUSPEND__' || exit 125
     printf '(run "/usr/bin/seq" "1" "20000")\n'
     printf '(format t "__FAST_AFTER_~a__~%%" "LARGE_OUTPUT")\n'
     printf 'exit 0\n'
