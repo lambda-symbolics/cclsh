@@ -30,11 +30,16 @@ fetch immutable diffs for the two exact fork commits and apply them to CCL
 1.13. Neither path follows a mutable branch at build time.
 
 Experimental NetBSD ARMv7 source builds, tested on NetBSD 11.0/earmv7hf, use
-the native port and generic saved-application argument policy at
-[[https://github.com/luciusmagn/ccl/commit/1f2133a80b800978d2e489db753d3b58f476f308][CCL commit =1f2133a80b800978d2e489db753d3b58f476f308=]].
-That source already contains the platform changes. NetBSD builds do not apply
-or attest the Linux patch mirrors. The exact checkout and native rebuild
-procedure are recorded in
+the native port, generic 32-bit ARM interrupt-allocation correction, and
+generic saved-application argument policy at
+[[https://github.com/luciusmagn/ccl/commit/9da04163294f86f72c7ce7fa9035709a705e5520][CCL commit =9da04163294f86f72c7ce7fa9035709a705e5520=]].
+The ARM correction also lives as the independently reviewable
+[[https://github.com/luciusmagn/ccl/tree/lho/fix/arm-interrupt-allocation][=lho/fix/arm-interrupt-allocation=]]
+topic based on upstream master. It restores a partially completed allocation
+before an immediate Lisp interrupt callback and preserves a completed
+allocation pointer. That source already contains the platform changes. NetBSD
+builds do not apply or attest the Linux patch mirrors. The exact checkout and
+native rebuild procedure are recorded in
 [[file:../docs/installation.org::*Prepare CCL on NetBSD 11.0/earmv7hf][the installation guide]].
 
 The local =.patch= files remain in this repository because Linux login-build

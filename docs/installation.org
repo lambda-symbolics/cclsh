@@ -126,17 +126,18 @@ scripts/check
 
 ** Prepare CCL on NetBSD 11.0/earmv7hf
 
-NetBSD ARMv7 support uses an experimental downstream CCL port plus the
-saved-application argument policy required by standalone cclsh images. Use the
-exact revision tested on NetBSD 11.0/earmv7hf:
+NetBSD ARMv7 support uses an experimental downstream CCL port, a generic
+32-bit ARM interrupt-allocation correction, and the saved-application argument
+policy required by standalone cclsh images. Use the exact revision tested on
+NetBSD 11.0/earmv7hf:
 
 #+begin_src sh
 git clone https://github.com/luciusmagn/ccl.git ../ccl
-git -C ../ccl checkout --detach 1f2133a80b800978d2e489db753d3b58f476f308
+git -C ../ccl checkout --detach 9da04163294f86f72c7ce7fa9035709a705e5520
 #+end_src
 
 The port's
-[[https://github.com/luciusmagn/ccl/blob/1f2133a80b800978d2e489db753d3b58f476f308/doc/manual/build.ccldoc][NetBSD ARM build guide at the tested revision]]
+[[https://github.com/luciusmagn/ccl/blob/9da04163294f86f72c7ce7fa9035709a705e5520/doc/manual/build.ccldoc][NetBSD ARM build guide at the tested revision]]
 documents bootstrap and native rebuild steps. Complete that rebuild so
 =../ccl/narmcl= and =../ccl/narmcl.image= are a matched pair, then check and
 build cclsh:
