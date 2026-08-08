@@ -410,7 +410,7 @@ zoxide's interactive query. Running setup after zoxide disappears removes
 its stale hook and command bindings.")
 
     ("prewarm" "optional prewarmed interactive launcher"
-     "cclsh-fast is an experimental, opt-in launcher that keeps one
+     "On Linux, cclsh-fast is an experimental, opt-in launcher that keeps a
 one-shot CCLSH worker loaded ahead of time:
 
   cclsh-fast daemon start
@@ -459,8 +459,23 @@ not. ASDF source-registry discovery remains lazy, so the first system lookup
 may scan configured project trees but ordinary shell startup does not. The
 flake does not edit /etc/shells or run chsh.
 
-Source checks can use stock CCL. For a standalone saved image, select the exact
-downstream CCL revision:
+Experimental NetBSD ARMv7 support is tested on NetBSD 11.0/earmv7hf against the
+downstream CCL port and native rebuild documented in docs/installation.org. The
+prewarmed launcher is Linux-only; ordinary cclsh, scripts, pipelines and
+login-shell installation are supported on NetBSD.
+
+Linux source checks can use stock CCL:
+
+  scripts/check
+
+NetBSD checks must select the ported kernel and its matching image:
+
+  make check CCL=../ccl/narmcl CCL_IMAGE=../ccl/narmcl.image
+
+The CCL and CCL_IMAGE make variables select the matched pair used by checks
+and saved-image builds when the platform defaults are not appropriate.
+
+For a standalone Linux saved image, select the exact downstream CCL revision:
 
   git clone git@github.com:luciusmagn/ccl.git ../ccl
   git -C ../ccl checkout --detach 579c87300ee632af99182276f2ad40e1c38c5d0a
@@ -468,18 +483,27 @@ downstream CCL revision:
 
 The fork is based on https://github.com/Clozure/ccl. Local files under
 patches/ are byte-stable attestation mirrors. Nix fetches immutable diffs for
-the exact fork commits. Select the rebuilt lx86cl64 and its matching boot image
-for make build. After an attested build, install one system shell for every
+the exact fork commits. Use the selected kernel and matching image for make
+build. Afterward, a non-root user can install an owner-only command for that
 account with:
 
+  make install BINDIR=\"$HOME/.local/bin\"
+
+After an attested build, install one system shell for every account. On Linux:
+
   sudo make install-system-shell
+
+On NetBSD, use doas or run make directly from a root shell:
+
+  doas make install-system-shell
 
 The installer registers /usr/local/bin/cclsh in /etc/shells but never changes
 an account. Each account then runs:
 
   chsh -s /usr/local/bin/cclsh
 
-README.org has the complete source and system installation sequence.")
+docs/installation.org has the complete platform-specific source, test and
+system installation sequence.")
 
     ("scripting" "one-shots, scripts and shebangs"
      "Three non-interactive modes, all skipping startup.lisp and
@@ -527,8 +551,9 @@ remain script data. Use -- before a dash-prefixed script path:
 
   cclsh -- -provision.sh.lisp alpha
 
-Keep the executable basename cclsh. The patched CCL kernel recognizes that
-name when preserving command and script arguments.
+Keep the executable basename cclsh. The Linux 1.13 fallback recognizes that
+name, while the NetBSD port records the application argument policy in the
+saved image itself.
 
 The process exit code is the last status, or the argument of exit. -c
 is what ssh invokes, so remote commands skip user state. Programs already
@@ -539,12 +564,25 @@ not sh.")
     ("login" "using cclsh as a login shell"
      "Install and register one root-owned shared copy outside the repository:
 
-  scripts/check
-  make system-shell-build CCL_SOURCE=../ccl CCL=../ccl/lx86cl64 \\
-    CCL_IMAGE=/usr/lib/ccl/lx86cl64.image
-  make integration-check CCL=../ccl/lx86cl64 \\
-    CCL_IMAGE=/usr/lib/ccl/lx86cl64.image
+  make check CCL=/path/to/ccl/PLATFORM-KERNEL \\
+    CCL_IMAGE=/path/to/matching-ccl.image
+  make system-shell-build CCL_SOURCE=/path/to/ccl \\
+    CCL=/path/to/ccl/PLATFORM-KERNEL \\
+    CCL_IMAGE=/path/to/matching-ccl.image
+  make integration-check CCL=/path/to/ccl/PLATFORM-KERNEL \\
+    CCL_IMAGE=/path/to/matching-ccl.image
+
+Replace PLATFORM-KERNEL with lx86cl64 on Linux or narmcl on NetBSD. The
+kernel must be the platform kernel inside CCL_SOURCE so attestation can verify
+the source and built executable are identical.
+
+On Linux, perform the privileged installation with:
+
   sudo make install-system-shell
+
+On NetBSD, use doas or run make directly from a root shell:
+
+  doas make install-system-shell
 
 This installs one user-neutral image at /usr/local/bin/cclsh and registers it
 in /etc/shells. It never changes an account. Set PROBE_USER=USER to add a
@@ -565,31 +603,39 @@ under its home or XDG directories. Copy examples/startup.lisp to
 Plain -c skips all user state for remote safety. -lc, -cl, -ic and
 -l -c load startup.lisp before running their command, so $SHELL -lc
 sees the configured login environment. Other flags are ignored so odd
-login invocations cannot lock you out. system-shell-build attests the required
-CCL patches and exact kernel/image hashes. install-system-shell rejects an
-absent or stale attestation, validates the candidate before activation, then
-registers its stable path in /etc/shells. Registration failure restores the
-previous release. An administrator can change another account with:
+login invocations cannot lock you out. system-shell-build attests the
+platform-required CCL patch mirrors and exact kernel/image hashes.
+install-system-shell rejects an absent or stale attestation, validates the
+candidate before activation, then registers its stable path in /etc/shells.
+Registration failure restores the previous release. An administrator can
+change another account with sudo on Linux or doas on NetBSD:
 
   sudo chsh -s /usr/local/bin/cclsh USER
+  doas chsh -s /usr/local/bin/cclsh USER
 
 Probe optional startup tools such as zoxide separately after the guaranteed
 version, safe command and configured PATH checks pass.
 
-Nothing sources /etc/profile for you. Keep /usr/local/bin, /usr/bin and /bin
-in PATH.
+Nothing sources /etc/profile for you. On Linux, keep at least /usr/local/bin,
+/usr/bin and /bin in PATH. On NetBSD, also keep /usr/pkg/bin, /usr/pkg/sbin,
+/usr/sbin and /sbin.
 
 The conservative choice is to keep root or another privileged recovery
 account on a stock shell. If root uses cclsh, keep an existing privileged
 session open while testing, verify boot-loader or live-system recovery, and use
-the same shared path:
+the same shared path with sudo on Linux or doas on NetBSD:
 
   sudo chsh -s /usr/local/bin/cclsh root
+  doas chsh -s /usr/local/bin/cclsh root
 
 Emergency access past broken user state:
 
   env CCLSH_SAFE=1 /usr/local/bin/cclsh
-  sudo chsh -s /usr/bin/fish USER"))
+  sudo chsh -s /bin/sh USER
+  doas chsh -s /bin/sh USER
+
+When working in a NetBSD root shell, omit the doas prefix.
+See docs/installation.org for the complete platform-specific sequence."))
   "The built-in manual: (name one-liner body) per section.")
 
 (defun manual--heading (text)

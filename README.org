@@ -5,13 +5,14 @@ A system shell running inside Clozure CL. Ordinary Unix commands and Common
 Lisp forms share one live image, so the boundary between shell use and Lisp is
 small and explicit.
 
-cclsh targets Linux x86-64. It is not a POSIX shell: command strings, scripts,
-pipelines and redirection use cclsh syntax. Try it as an ordinary shell before
-considering login-shell use.
+cclsh targets Linux x86-64 and has experimental NetBSD ARMv7 support, tested
+on NetBSD 11.0/earmv7hf against a downstream CCL port. It is not a POSIX shell:
+command strings, scripts, pipelines and redirection use cclsh syntax. Try it as
+an ordinary shell before considering login-shell use.
 
 * Try it
 
-With Nix flakes enabled:
+On Linux with Nix flakes enabled:
 
 #+begin_src sh
 nix run github:luciusmagn/cclsh -- --version
@@ -32,14 +33,16 @@ substitutes a Lisp result into a command.
 
 * Install
 
-The Nix flake is the recommended package:
+The Nix flake is the recommended Linux package:
 
 #+begin_src sh
 nix profile install github:luciusmagn/cclsh
 cclsh --version
 #+end_src
 
-From a checkout, use =nix run .= or =nix profile install .#cclsh=.
+From a checkout on Linux, use =nix run .= or =nix profile install .#cclsh=.
+NetBSD 11.0/earmv7hf uses the source build and experimental downstream CCL port
+described in the installation guide.
 
 See [[file:docs/installation.org][Installing cclsh]] for Quicklisp state, source
 builds, local installation and the guarded shared login-shell procedure.
@@ -73,7 +76,7 @@ both command mode and Lisp.
 - startup configuration in =~/.config/cclsh/startup.lisp=
 - command strings, scripts, shebang scripts and piped input
 - optional zoxide integration with =z= and =zi=
-- optional experimental =cclsh-fast= prewarmed interactive launcher
+- optional experimental =cclsh-fast= prewarmed interactive launcher on Linux
 
 * Documentation
 
@@ -91,12 +94,22 @@ from another shell. Use =cclsh help SECTION= for a specific topic.
 
 * Development
 
-Stock CCL 1.13 is sufficient for regression checks and unsaved REPL
+Stock CCL 1.13 is sufficient for Linux regression checks and unsaved REPL
 development:
 
 #+begin_src sh
 scripts/check
 #+end_src
+
+NetBSD 11.0/earmv7hf requires the matched kernel and image from the experimental
+downstream CCL port recorded in the installation guide:
+
+#+begin_src sh
+make check CCL=../ccl/narmcl CCL_IMAGE=../ccl/narmcl.image
+#+end_src
+
+The =CCL= and =CCL_IMAGE= make variables select the kernel and matching image
+used by checks when the platform defaults are not appropriate.
 
 Standalone image builds require the downstream CCL changes documented in the
 [[file:docs/installation.org][installation guide]].

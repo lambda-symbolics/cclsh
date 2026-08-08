@@ -1,13 +1,14 @@
 #+TITLE: Installing cclsh
 #+AUTHOR: Lukáš Hozda
 
-cclsh supports Linux x86-64. The Nix flake is the recommended installation;
-source builds are intended for development and shared login-shell deployments.
+cclsh supports Linux x86-64 and has experimental NetBSD ARMv7 support, tested
+on NetBSD 11.0/earmv7hf against the downstream CCL port below. The Nix flake is
+the recommended Linux installation; NetBSD uses a source build.
 
 cclsh is not a POSIX shell. Use it as an ordinary shell before making it a
 login shell, and keep a working recovery shell available.
 
-* Nix package
+* Linux Nix package
 
 ** Try it
 
@@ -59,12 +60,17 @@ and safe mode do not execute them.
 
 ** Requirements
 
-Source development is tested with CCL 1.13 on Linux x86-64. It requires:
+Source development is tested with CCL 1.13 on Linux x86-64 and the experimental
+downstream CCL port on NetBSD 11.0/earmv7hf. It requires:
 
 - Git and Quicklisp
-- GNU make, coreutils, findutils, grep, awk, util-linux, m4 and binutils
+- On Linux, GNU make, coreutils, findutils, grep, awk, util-linux, m4 and
+  binutils
+- On NetBSD, base =/usr/bin/make=, =m4=, =/usr/sbin/paxctl= and userland
+  commands
 - a C toolchain
-- =flock=, =runuser= and =getent= for installation tooling
+- =flock= and =getent=; Linux probes additionally use =runuser=, while NetBSD
+  probes use =/usr/sbin/chroot=
 
 zoxide is optional. Install =fzf= as well to use zoxide's interactive =zi=
 command.
@@ -105,7 +111,8 @@ caches and downloaded systems do not enter the image.
 
 ** Run from stock CCL
 
-Stock CCL is sufficient for regression checks and unsaved REPL development:
+Stock CCL is sufficient for Linux regression checks and unsaved REPL
+development:
 
 #+begin_src sh
 scripts/check
@@ -117,7 +124,40 @@ scripts/check
 (cclsh:main)
 #+end_src
 
-** Build a standalone image
+** Prepare CCL on NetBSD 11.0/earmv7hf
+
+NetBSD ARMv7 support uses an experimental downstream CCL port plus the
+saved-application argument policy required by standalone cclsh images. Use the
+exact revision tested on NetBSD 11.0/earmv7hf:
+
+#+begin_src sh
+git clone https://github.com/luciusmagn/ccl.git ../ccl
+git -C ../ccl checkout --detach 1f2133a80b800978d2e489db753d3b58f476f308
+#+end_src
+
+The port's
+[[https://github.com/luciusmagn/ccl/blob/1f2133a80b800978d2e489db753d3b58f476f308/doc/manual/build.ccldoc][NetBSD ARM build guide at the tested revision]]
+documents bootstrap and native rebuild steps. Complete that rebuild so
+=../ccl/narmcl= and =../ccl/narmcl.image= are a matched pair, then check and
+build cclsh:
+
+#+begin_src sh
+make check CCL=../ccl/narmcl CCL_IMAGE=../ccl/narmcl.image
+make build CCL=../ccl/narmcl CCL_IMAGE=../ccl/narmcl.image
+#+end_src
+
+As a non-root user, install the validated pair for that account without
+changing =/etc/shells=:
+
+#+begin_src sh
+make install BINDIR="$HOME/.local/bin"
+#+end_src
+
+The build records =:process-runtime-options nil= in the saved application. CCL
+therefore leaves cclsh commands and script arguments untouched instead of
+claiming words that resemble CCL runtime options.
+
+** Build a standalone image on Linux
 
 A standalone image requires the Linux xstate and cclsh argument-boundary
 changes from the [[https://github.com/luciusmagn/ccl][LuciusMagn CCL fork]], based
@@ -162,7 +202,7 @@ system-shell procedure below instead.
 
 * Experimental prewarmed launcher
 
-The optional =cclsh-fast= command keeps one CCLSH worker loaded ahead of time.
+The Linux-only =cclsh-fast= command keeps one CCLSH worker loaded ahead of time.
 It accelerates only a no-argument interactive launch whose standard input,
 output and error are the same foreground terminal. Options, scripts, piped
 input, redirected sessions, login-style invocations and incompatible process
@@ -229,7 +269,7 @@ independent of the daemon.
 
 * Verify process and terminal changes
 
-Run the normal checks first:
+On Linux, run the normal checks first:
 
 #+begin_src sh
 scripts/check
@@ -247,9 +287,19 @@ CCLSH_CCL_IMAGE=/usr/lib/ccl/lx86cl64.image \
   scripts/integration-check
 #+end_src
 
-The integration command also builds and exercises =cclsh-fast=, including
-direct fallback, worker replacement, caller context transfer, Ctrl-C and
-terminal restoration.
+On NetBSD 11.0/earmv7hf, select the ported kernel and its matching image for
+both the checks and saved-image integration run:
+
+#+begin_src sh
+make check CCL=../ccl/narmcl CCL_IMAGE=../ccl/narmcl.image
+make build CCL=../ccl/narmcl CCL_IMAGE=../ccl/narmcl.image
+make integration-check CCL=../ccl/narmcl \
+  CCL_IMAGE=../ccl/narmcl.image
+#+end_src
+
+On Linux, the integration command also builds and exercises =cclsh-fast=,
+including direct fallback, worker replacement, caller context transfer,
+Ctrl-C and terminal restoration. NetBSD skips the Linux-only launcher checks.
 
 * Install a shared login shell
 
@@ -259,7 +309,7 @@ Startup, history and writable Quicklisp state remain private to each account.
 
 ** Build and install an attested release
 
-Run the steps in this order:
+On Linux, run the steps in this order:
 
 #+begin_src sh
 scripts/check
@@ -270,20 +320,37 @@ make integration-check CCL=../ccl/lx86cl64 \
 sudo make install-system-shell
 #+end_src
 
-=system-shell-build= verifies both downstream CCL changes, rebuilds the kernel,
-publishes the image and writes =cclsh.attestation= over the patch and artifact
-hashes. Do not run a plain =scripts/build= afterward; a plain build removes the
-attestation.
+On NetBSD ARMv7, select its kernel and matching image instead:
+
+#+begin_src sh
+make check CCL=../ccl/narmcl CCL_IMAGE=../ccl/narmcl.image
+make system-shell-build CCL_SOURCE=../ccl CCL=../ccl/narmcl \
+  CCL_IMAGE=../ccl/narmcl.image
+make integration-check CCL=../ccl/narmcl \
+  CCL_IMAGE=../ccl/narmcl.image
+doas make install-system-shell PROBE_USER=USER
+#+end_src
+
+Run the final command directly from a root shell if =doas= is not configured.
+The =sudo= commands in this guide are Linux examples; use =doas= or a root
+shell for privileged NetBSD commands.
+
+=system-shell-build= rebuilds the selected CCL kernel, validates the application
+argument boundary, publishes the image and writes =cclsh.attestation= over the
+platform-required patch mirrors and artifact hashes. Do not run a plain
+=scripts/build= afterward; a plain build removes the attestation.
 
 =install-system-shell= validates the candidate before activation, switches its
 content-addressed release atomically and registers =/usr/local/bin/cclsh= in
 =/etc/shells=. It rejects a missing or stale attestation. Registration failure
 restores the previous release.
 
-Set =PROBE_USER= to add a clean-home launch as an existing account:
+Set =PROBE_USER= to add a clean-home launch as an existing account. For
+example, use =sudo= on Linux or =doas= on NetBSD:
 
 #+begin_src sh
 sudo make install-system-shell PROBE_USER=USER
+doas make install-system-shell PROBE_USER=USER
 #+end_src
 
 The probe is additional validation only. It does not bind the installation to
@@ -306,9 +373,10 @@ you have a source checkout, copy it from its absolute path rather than assuming
 that =examples/= exists in the current directory.
 
 A cclsh login shell does not source =/etc/profile= or another shell's
-configuration. Ensure that =PATH= retains required system directories such as
-=/usr/local/bin=, =/usr/bin= and =/bin=. Test optional startup tools such as
-zoxide separately.
+configuration. Ensure that =PATH= retains required system directories. On
+NetBSD, include at least =/usr/local/bin=, =/usr/pkg/bin=, =/usr/pkg/sbin=,
+=/usr/bin=, =/usr/sbin=, =/bin= and =/sbin= when login commands need them. Test
+optional startup tools such as zoxide separately.
 
 ** Change the login shell
 
@@ -321,10 +389,12 @@ env CCLSH_SAFE=1 /usr/local/bin/cclsh -c 'exit 0'
 chsh -s /usr/local/bin/cclsh
 #+end_src
 
-An administrator can change another account with:
+An administrator can change another account with =sudo= on Linux or =doas= on
+NetBSD. A NetBSD root shell can run =chsh= directly:
 
 #+begin_src sh
 sudo chsh -s /usr/local/bin/cclsh USER
+doas chsh -s /usr/local/bin/cclsh USER
 #+end_src
 
 Plain =-c= commands run without user state, as expected by sshd. Executables
@@ -339,10 +409,12 @@ is to leave =root= or another privileged recovery account on a stock shell. If
 every privileged account uses cclsh, keep a tested boot-loader or live-system
 recovery route.
 
-Only after validating that recovery path should you change root:
+Only after validating that recovery path should you change root. Use =sudo= on
+Linux, =doas= on NetBSD, or run =chsh= directly from a root shell:
 
 #+begin_src sh
 sudo chsh -s /usr/local/bin/cclsh root
+doas chsh -s /usr/local/bin/cclsh root
 #+end_src
 
 Never use a repository artifact as an account's shell; it can disappear after a

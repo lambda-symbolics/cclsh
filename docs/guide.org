@@ -626,9 +626,10 @@ Clinedi's defaults or another editor.
 
 * Quicklisp and scripting
 
-The optional experimental =cclsh-fast= launcher can reuse a preloaded one-shot
-worker for no-argument interactive sessions. It is a separate opt-in command;
-ordinary =cclsh= and all scripts remain daemon-free. See [[file:installation.org::*Experimental prewarmed launcher][Experimental
+The optional experimental Linux-only =cclsh-fast= launcher can reuse a
+preloaded one-shot worker for no-argument interactive sessions. It is a
+separate opt-in command; ordinary =cclsh= and all scripts remain daemon-free.
+See [[file:installation.org::*Experimental prewarmed launcher][Experimental
 prewarmed launcher]] for setup, exact fallback rules and pseudoterminal limits.
 
 Every saved cclsh image includes Quicklisp and the pinned Clinedi and
@@ -706,8 +707,9 @@ supplied after it. For example, =cclsh provision.sh.lisp alpha "two words"=
 binds it to =("provision.sh.lisp" "alpha" "two words")=. Arguments beginning
 with a dash remain script data, and =*argv*= is =nil= outside script mode. Use
 =cclsh -- -script.sh.lisp argument= when the script path itself begins with a
-dash. Keep the executable basename =cclsh=; the patched CCL kernel uses that
-name to stop its own option parser at cclsh's command or script boundary.
+dash. Keep the executable basename =cclsh=. The Linux 1.13 fallback recognizes
+that name, while the NetBSD port records the application argument policy in the
+saved image itself.
 
 The process exit code is the shell's last status, or the argument of
 =exit=.

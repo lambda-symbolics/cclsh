@@ -11,7 +11,7 @@ the Apache License 2.0. See [[file:LICENSE][LICENSE]]. The repository's ISC
 license applies to cclsh's original material and does not supersede the
 upstream terms attached to these patches.
 
-The supported downstream line starts at the peeled CCL =v1.13= commit:
+The supported Linux downstream line starts at the peeled CCL =v1.13= commit:
 
 #+begin_example
 c994217adc56b3f8a564526cee4695893ac84d86
@@ -29,13 +29,21 @@ Manual builds clone the fork and detach at the final revision. Nix builds
 fetch immutable diffs for the two exact fork commits and apply them to CCL
 1.13. Neither path follows a mutable branch at build time.
 
-The local =.patch= files remain in this repository because login-build
-attestation hashes their exact bytes. They are mirrors of the changes carried
-by the fork, not an independent place to revise those changes. A source change
-starts as a focused fork commit. The corresponding local mirror, Nix source,
-documentation, tests and attestation expectations then change together.
-Cosmetic regeneration of a local mirror is inappropriate because it changes
-the attested bytes without changing runtime behavior.
+Experimental NetBSD ARMv7 source builds, tested on NetBSD 11.0/earmv7hf, use
+the native port and generic saved-application argument policy at
+[[https://github.com/luciusmagn/ccl/commit/1f2133a80b800978d2e489db753d3b58f476f308][CCL commit =1f2133a80b800978d2e489db753d3b58f476f308=]].
+That source already contains the platform changes. NetBSD builds do not apply
+or attest the Linux patch mirrors. The exact checkout and native rebuild
+procedure are recorded in
+[[file:../docs/installation.org::*Prepare CCL on NetBSD 11.0/earmv7hf][the installation guide]].
+
+The local =.patch= files remain in this repository because Linux login-build
+attestation hashes the platform-required mirrors' exact bytes. They are mirrors
+of the changes carried by the fork, not an independent place to revise those
+changes. A source change starts as a focused fork commit. The corresponding
+local mirror, Nix source, documentation, tests and attestation expectations
+then change together. Cosmetic regeneration of a local mirror is inappropriate
+because it changes the attested bytes without changing runtime behavior.
 
 Both mirrors originated in cclsh commit
 [[https://github.com/luciusmagn/cclsh/commit/6a9d211fa956cb6a1da5f68d40535f7773c129ff][=6a9d211fa956cb6a1da5f68d40535f7773c129ff=]], =Attest patched
@@ -109,11 +117,11 @@ script arguments, installation and attestation behavior.
   [[https://github.com/luciusmagn/ccl/commit/a293f4460fadc5da420eec0739e61622e847aed2][=a293f4460fadc5da420eec0739e61622e847aed2=]]
 - Downstream base:
   [[https://github.com/Clozure/ccl/commit/c994217adc56b3f8a564526cee4695893ac84d86][=c994217adc56b3f8a564526cee4695893ac84d86=]]
-- Prepared upstream topic branch:
+- Historical submitted upstream topic branch:
   [[https://github.com/luciusmagn/ccl/tree/lho/fix/linux-x86-64-xstate][=lho/fix/linux-x86-64-xstate=]]
-- Prepared upstream commit:
+- Historical submitted upstream commit:
   [[https://github.com/luciusmagn/ccl/commit/1c6f0cca158098546d762aeaa646822650b53cf7][=1c6f0cca158098546d762aeaa646822650b53cf7=]]
-- Prepared upstream base:
+- Historical submitted upstream base:
   [[https://github.com/Clozure/ccl/commit/0258e0955269ef936414d601034966648f5f470e][=0258e0955269ef936414d601034966648f5f470e=]]
 - Related upstream issue:
   [[https://github.com/Clozure/ccl/issues/85][Clozure CL issue 85]]
@@ -130,10 +138,11 @@ not a verbatim restoration of the historical change.
 
 ** Upstream and retirement status
 
-- Classification: upstream candidate
-- Topic branch: prepared and pushed
-- Pull request: none submitted
-- Upstream merge commit: none
+- Classification: accepted upstream, retained as a CCL 1.13 backport
+- Upstream commits:
+  [[https://github.com/Clozure/ccl/commit/f7ed55a9ae45e6a5ae09fd778d0c5f2b1b4e44e5][64-bit handling]],
+  [[https://github.com/Clozure/ccl/commit/db0f32a8cef091f5fc80d5e5065cfb327a075c7d][constants and documentation]], and
+  [[https://github.com/Clozure/ccl/commit/91638d1150804e02188d68b22c4456b16b813454][32-bit handling]]
 - First upstream release containing the fix: none
 - Focused regression requirement: demonstrate that extended AVX state survives
   the relevant Linux signal path and that malformed size metadata takes the
@@ -170,7 +179,10 @@ above.
 ** Upstream and retirement status
 
 - Classification: downstream-only as written
-- Upstream topic branch: none
+- Generic upstream topic branch:
+  [[https://github.com/luciusmagn/ccl/tree/lho/fix/saved-application-arguments][=lho/fix/saved-application-arguments=]]
+- Generic upstream topic tip:
+  [[https://github.com/luciusmagn/ccl/commit/33a20398f06bcbf46e56de04b9056cdedc127360][=33a20398f06bcbf46e56de04b9056cdedc127360=]]
 - Pull request: none submitted
 - Upstream merge commit: none
 - First upstream release containing an equivalent facility: none
