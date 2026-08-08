@@ -60,6 +60,9 @@
 (defconstant +process-wuntraced+ #x02
   "WUNTRACED waitpid flag for the supported host ABIs.")
 
+(defconstant +process-wnohang+ #x01
+  "WNOHANG waitpid flag for the supported host ABIs.")
+
 (defconstant +process-wcontinued+
   #+netbsd #x10
   #-netbsd #x08
@@ -520,17 +523,105 @@ a fast first-stage leader unreaped while later stages join its group."
         (t
          (values ':signaled (logand status #x7f)))))
 
+(defun process--record-state-locked (process state code)
+  "Record one child transition while PROCESS's lock is held.
+Return its event and true when the transition was recorded."
+  ;; A terminal state is final. Concurrent waiters can return an older
+  ;; continued report after another waiter has already reaped the child.
+  (if (member (shell-process-state process) '(:exited :signaled))
+      (values nil nil)
+      (progn
+        (setf (shell-process-state process) state
+              (shell-process-code process) code)
+        (incf (shell-process-generation process))
+        (values (shell-process-event process) t))))
+
 (defun process--publish-state (process state code)
   "Publish one child transition and notify PROCESS's event."
-  (let (event)
-    (ccl:with-lock-grabbed ((shell-process-lock process))
-      (setf (shell-process-state process) state)
-      (setf (shell-process-code process) code)
-      (incf (shell-process-generation process))
-      (setf event (shell-process-event process)))
+  (multiple-value-bind (event recorded)
+      (ccl:with-lock-grabbed ((shell-process-lock process))
+        (process--record-state-locked process state code))
+    (declare (ignore recorded))
     (when event
       (ccl:signal-semaphore event)))
   (values))
+
+(defun process--record-continued-snapshot-locked (process generation)
+  "Record PROCESS as running while its lock is held.
+GENERATION must still name its stopped state. Return the process event and
+true only when the guarded transition was recorded."
+  (if (and (eq (shell-process-state process) ':stopped)
+           (= (shell-process-generation process) generation))
+      (progn
+        (setf (shell-process-state process) ':running
+              (shell-process-code process) nil)
+        (incf (shell-process-generation process))
+        (values (shell-process-event process) t))
+      (values nil nil)))
+
+(defun process--publish-continued-snapshot (process generation)
+  "Publish PROCESS as running if GENERATION still names its stopped state.
+Return true only when the guarded transition was published."
+  (multiple-value-bind (event published)
+      (ccl:with-lock-grabbed ((shell-process-lock process))
+        (process--record-continued-snapshot-locked process generation))
+    (when event
+      (ccl:signal-semaphore event))
+    published))
+
+(defun process--consume-continued-snapshot (process generation)
+  "Consume PROCESS's pending continued state without blocking.
+GENERATION identifies the stopped snapshot which caused SIGCONT. A terminal
+state returned by WAITPID is also published. Return true when this call
+published a transition."
+  (let ((event nil)
+        (published nil)
+        (failure-code nil))
+    (ccl:%stack-block ((status-pointer 4))
+      ;; Holding the state lock claims any status this waiter reaps. If the
+      ;; monitor gets ECHILD after this call reaps a terminal status, it cannot
+      ;; publish its fallback 127 before the real status becomes visible.
+      (ccl:with-lock-grabbed ((shell-process-lock process))
+        (loop
+          (let ((result
+                  (external-call "waitpid"
+                                 :int (shell-process-pid process)
+                                 :address status-pointer
+                                 :int (logior +process-wnohang+
+                                              +process-wcontinued+)
+                                 :int)))
+            (cond ((plusp result)
+                   (multiple-value-bind (state code)
+                       (process--wait-state
+                        (ccl:%get-signed-long status-pointer 0))
+                     (multiple-value-setq (event published)
+                       (case state
+                         (:running
+                          (process--record-continued-snapshot-locked
+                           process generation))
+                         ((:exited :signaled)
+                          (process--record-state-locked process state code))
+                         (t
+                          (values nil nil)))))
+                   (return))
+                  ((zerop result)
+                   (return))
+                  (t
+                   (let ((code (process--errno)))
+                     (cond ((= code +process-eintr+))
+                           ((= code +process-echild+)
+                            (return))
+                           (t
+                            (setf failure-code code)
+                            (return))))))))))
+    (when failure-code
+      (process--system-error
+       (shell-process-pid process)
+       "inspect continued child state"
+       failure-code))
+    (when event
+      (ccl:signal-semaphore event))
+    published))
 
 (defun process--publish-lost-child (process)
   "Publish status 127 if no other waiter already finalized PROCESS."

@@ -449,12 +449,57 @@ pipeline job and inherits that stage's prepared standard descriptors.")
                      (setf (job-monitor-error job) failure))
                    (error failure)))))))))
 
+#+netbsd
+(defun job--stopped-snapshot-pending-p (snapshot)
+  "True while SNAPSHOT still names its process's pre-SIGCONT stop."
+  (multiple-value-bind (state code generation)
+      (shell-process-status (car snapshot))
+    (declare (ignore code))
+    (and (eq state ':stopped)
+         (= generation (cdr snapshot)))))
+
+#+netbsd
+(defun job--record-continuation (job)
+  "Record that JOB left its pre-SIGCONT stopped state.
+This makes the next refresh recognize a rapid new stop as a transition and
+stop any resumed auxiliaries. A concurrently completed job remains final."
+  (ccl:with-lock-grabbed ((job-lock job))
+    (unless (eq (job-status job) ':done)
+      (setf (job-status job) ':running)))
+  (values))
+
 (defun job--continue-processes (job)
   "Continue JOB with one process-group signal and wait for WCONTINUED."
-  (job--signal-group job +sigcont+)
-  (job--control-auxiliaries job ':resume)
-  (loop while (eq (job-refresh job) ':stopped)
-        do (job--wait-for-change job))
+  (let ((stopped-snapshots
+          #+netbsd
+          (loop for process in (job-processes job)
+                for snapshot = (multiple-value-list
+                                (shell-process-status process))
+                when (eq (first snapshot) ':stopped)
+                  collect (cons process (third snapshot)))
+          #-netbsd
+          nil))
+    (declare (ignorable stopped-snapshots))
+    (job--signal-group job +sigcont+)
+    #+netbsd
+    ;; NetBSD records WCONTINUED and sends SIGCHLD here, but it does not
+    ;; wake a thread already sleeping in WAITPID. In multithreaded CCL the
+    ;; signal can reach another thread, so consume the pending transition
+    ;; synchronously. The generation guard preserves a newer stop, while a
+    ;; terminal state remains final if the two waiters race.
+    (dolist (snapshot stopped-snapshots)
+      (process--consume-continued-snapshot (car snapshot) (cdr snapshot)))
+    (job--control-auxiliaries job ':resume)
+    #+netbsd
+    (progn
+      (loop while (find-if #'job--stopped-snapshot-pending-p
+                           stopped-snapshots)
+            do (job--wait-for-change job))
+      (job--record-continuation job)
+      (job-refresh job))
+    #-netbsd
+    (loop while (eq (job-refresh job) ':stopped)
+          do (job--wait-for-change job)))
   (values))
 
 (defun job--suspend (job)
@@ -480,7 +525,7 @@ pipeline job and inherits that stage's prepared standard descriptors.")
    pipelines whose output the shell itself is collecting.
    Non-interactive sessions continue through stops. Returns
    (values status stopped) where STATUS is the exit status of the
-   job's last process, or the stop status 148."
+   job's last process, or 128 plus the host's SIGTSTP number."
   (let ((interactive (terminal-tty-p))
         (noticed     nil))
     (job-start-monitors job)
@@ -534,10 +579,11 @@ pipeline job and inherits that stage's prepared standard descriptors.")
   "Run JOB as the terminal's foreground job until it finishes or, on
    an interactive session, stops. With CONTINUE the job resumes from
    a stop: its retained terminal attributes are reapplied and its one
-   process group receives SIGCONT. Returns the exit status, or 148
-   when the job stopped and returned to the table. ON-ATTEND, when
-   supplied, runs once after monitor startup and any foreground
-   handoff. ON-STOP controls stopped jobs like JOB-WAIT-ATTENDED."
+   process group receives SIGCONT. Returns the exit status, or 128 plus
+   the host's SIGTSTP number when the job stopped and returned to the
+   table. ON-ATTEND, when supplied, runs once after monitor startup and
+   any foreground handoff. ON-STOP controls stopped jobs like
+   JOB-WAIT-ATTENDED."
   (let ((interactive (terminal-tty-p))
         (shell-group (terminal-own-process-group))
         (shell-attributes nil)
@@ -629,7 +675,8 @@ pipeline job and inherits that stage's prepared standard descriptors.")
 
 (defun command-execute-external (path arguments)
   "Run the program at PATH with ARGUMENTS sharing the terminal as the
-   foreground job. Returns the exit status, 148 after a Ctrl-Z stop."
+   foreground job. Returns the exit status, or 128 plus the host's SIGTSTP
+   number after a Ctrl-Z stop."
   (let* ((job     (job-make :command (job--label path arguments)))
          (process (shell-process-spawn path arguments
                                        :process-group 0
@@ -892,7 +939,6 @@ Standard job selectors and command prefixes retain JOB-FIND precedence."
           (t
            (job-touch job)
            (job--continue-processes job)
-           (setf (job-status job) ':running)
            (setf (job-reported job) ':running)
            (format t "[~d]~a ~a &~%"
                    (job-id job) (job-mark job) (job-command job))

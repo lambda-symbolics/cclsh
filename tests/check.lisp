@@ -37,6 +37,8 @@
                  #x20 cclsh::+process-spawn-set-sigmask+)
            (list "NetBSD WCONTINUED"
                  #x10 cclsh::+process-wcontinued+)
+           (list "NetBSD WNOHANG"
+                 #x01 cclsh::+process-wnohang+)
            (list "NetBSD SIGTSTP"
                  18 cclsh::+process-sigtstp+)
            (list "NetBSD process sigset_t size"
@@ -1709,10 +1711,136 @@
   (check-equal "process stop advances its transition generation"
                (list ':stopped cclsh::+process-sigtstp+ 1)
                (multiple-value-list (cclsh::shell-process-status process)))
-  (cclsh::process--publish-state process ':running nil)
-  (check-equal "process continuation advances its transition generation"
+  (check-equal "stale continuation leaves a newer stop intact"
+               nil
+               (cclsh::process--publish-continued-snapshot process 0))
+  (check-equal "stale continuation preserves the stopped snapshot"
+               (list ':stopped cclsh::+process-sigtstp+ 1)
+               (multiple-value-list (cclsh::shell-process-status process)))
+  (check-equal "matching continuation publishes running"
+               t
+               (cclsh::process--publish-continued-snapshot process 1))
+  (check-equal "guarded continuation advances its transition generation"
                '(:running nil 2)
                (multiple-value-list (cclsh::shell-process-status process))))
+
+(let ((process (cclsh::process--make 1)))
+  (cclsh::process--publish-state process ':exited 7)
+  (cclsh::process--publish-state process ':running nil)
+  (check-equal "terminal process state rejects a stale continuation"
+               '(:exited 7 1)
+               (multiple-value-list (cclsh::shell-process-status process))))
+
+#+netbsd
+(let* ((resume-count 0)
+       (stop-count   0)
+       (process      (cclsh::process--make 1))
+       (job          (cclsh::job-make :processes (list process))))
+  (cclsh::job-add-auxiliary
+   job
+   (lambda () nil)
+   :stop (lambda () (incf stop-count))
+   :resume (lambda () (incf resume-count)))
+  (cclsh::process--publish-state
+   process ':stopped cclsh::+process-sigtstp+)
+  (setf (cclsh::job-status job) ':stopped)
+  (let ((snapshot
+          (cons process (cclsh::shell-process-generation process))))
+    (check-equal "NetBSD original stop snapshot begins pending"
+                 t
+                 (cclsh::job--stopped-snapshot-pending-p snapshot))
+    (cclsh::job--control-auxiliaries job ':resume)
+    (cclsh::process--publish-state process ':running nil)
+    (cclsh::process--publish-state
+     process ':stopped cclsh::+process-sigtstp+)
+    (check-equal "NetBSD rapid re-stop advances the original snapshot"
+                 nil
+                 (cclsh::job--stopped-snapshot-pending-p snapshot)))
+  (cclsh::job--record-continuation job)
+  (check-equal "NetBSD rapid re-stop remains stopped after reconciliation"
+               ':stopped
+               (cclsh::job-refresh job))
+  (check-equal "NetBSD continuation resumes an auxiliary once"
+               1
+               resume-count)
+  (check-equal "NetBSD rapid re-stop stops the resumed auxiliary once"
+               1
+               stop-count))
+
+#+netbsd
+(let* ((event           (ccl:make-semaphore))
+       (resume-complete (ccl:make-semaphore))
+       (job             (cclsh::job-make :command "continued wait wake"))
+       (first-process   nil)
+       (second-process  nil)
+       (resume-thread   nil)
+       (resume-returned nil)
+       (resume-error    nil)
+       (completed       nil))
+  (unwind-protect
+      (progn
+        (setf first-process
+              (cclsh::shell-process-spawn
+               "/bin/sleep" (list "30")
+               :process-group 0 :event event))
+        (setf (cclsh::job-processes job) (list first-process)
+              (cclsh::job-process-group job)
+              (cclsh::shell-process-pid first-process))
+        (setf second-process
+              (cclsh::shell-process-spawn
+               "/bin/sleep" (list "30")
+               :process-group (cclsh::job-process-group job)
+               :event event))
+        (setf (cclsh::job-processes job)
+              (list first-process second-process))
+        (cclsh::job-start-monitors job)
+        (check-equal
+         "NetBSD test group accepts a stop signal"
+         '(t 0)
+         (multiple-value-list
+          (cclsh::process-group-kill
+           (cclsh::job-process-group job)
+           cclsh::+process-sigtstp+)))
+        (loop repeat 100
+              until (eq (cclsh::job-refresh job) ':stopped)
+              do (ccl:timed-wait-on-semaphore event 0.05))
+        (check-equal "NetBSD test group reaches stopped state"
+                     ':stopped
+                     (cclsh::job-refresh job))
+        (setf resume-thread
+              (ccl:process-run-function
+               "continued wait wake"
+               (lambda ()
+                 (unwind-protect
+                     (handler-case
+                         (progn
+                           (cclsh::job--continue-processes job)
+                           (setf resume-returned t))
+                       (error (condition)
+                         (setf resume-error (princ-to-string condition))))
+                   (ccl:signal-semaphore resume-complete)))))
+        (setf completed
+              (not (null
+                    (ccl:timed-wait-on-semaphore resume-complete 2))))
+        (check-equal "NetBSD continued group wakes its blocked waiters"
+                     t
+                     completed)
+        (when completed
+          (check-equal "NetBSD continued group reports no resume error"
+                       nil
+                       resume-error)
+          (check-equal "NetBSD continued group returns from resume"
+                       t
+                       resume-returned)
+          (check-equal "NetBSD continued group becomes running"
+                       '(:running :running)
+                       (mapcar #'cclsh::shell-process-live-state
+                               (cclsh::job-processes job)))))
+    ;; Reaping first releases an unfixed waiter before JOIN-PROCESS.
+    (when (cclsh::job-processes job)
+      (ignore-errors (cclsh::job--kill-reap job)))
+    (when resume-thread
+      (ignore-errors (ccl:join-process resume-thread)))))
 
 (check-equal "stopped external group wins over a live Lisp task"
              ':stopped
