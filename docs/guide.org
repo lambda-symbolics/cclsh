@@ -201,8 +201,10 @@ From Lisp, a function object or symbol can be supplied directly:
 #+end_src
 
 After the editor exits successfully, cclsh displays the before-and-after text
-with Colordiff and Lisp syntax highlighting. The temporary file is removed
-afterward; =edit= does not replace or evaluate the original source file. CCL's
+with Colordiff and Lisp syntax highlighting, evaluates the edited top-level
+form in the function's package, and installs the new definition in the running
+image. The original source file is not changed. The edited text is retained as
+the function's current interactive source so =edit= can be used again. CCL's
 native source-note database provides the definition, so this does not require
 SB-INTROSPECT. Definitions compiled without retained source information cannot
 be edited this way.

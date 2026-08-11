@@ -1,7 +1,7 @@
 ;;;; -- Definition editing --
 ;;;
-;;; Open a recorded function definition in the user's editor and render the
-;;; saved before/after text with Colordiff.
+;;; Open a recorded function definition in the user's editor, render the saved
+;;; before/after text with Colordiff, and install it in the running image.
 
 (in-package #:cclsh)
 
@@ -56,14 +56,12 @@ terminal editor.")
             "~s is not a function, symbol, or SETF function name" name)))))
 
 (defun definition-edit--source (designator)
-  "Return source text, pathname and starting line for DESIGNATOR."
+  "Return source text, pathname, starting line, function and function name."
   (let* ((function (definition-edit--function designator))
-         (name (ccl:function-name function))
-         (targets (if (and name (not (eq name function)))
-                      (list function name)
-                      (list function)))
-         (fallback nil))
-    (dolist (target targets)
+         (name (ccl:function-name function)))
+    (unless name
+      (definition-edit--fail "the function has no name to redefine"))
+    (dolist (target (list function name))
       (dolist (entry (ccl:find-definition-sources target 'function))
         (dolist (note (rest entry))
           (when (ccl:source-note-p note)
@@ -76,14 +74,9 @@ terminal editor.")
                               (definition-edit--source-line
                                pathname
                                (ccl:source-note-start-pos note)))))
-                  (when pathname
-                    (return-from definition-edit--source
-                      (values text pathname line)))
-                  (unless fallback
-                    (setf fallback (list text nil nil))))))))))
-    (when fallback
-      (return-from definition-edit--source (values-list fallback))))
-  (definition-edit--fail "no recorded source is available for ~s" designator))
+                  (return-from definition-edit--source
+                    (values text pathname line function name)))))))))
+    (definition-edit--fail "no recorded source is available for ~s" designator)))
 
 (defun definition-edit--source-line (pathname byte-position)
   "Return the one-based line at BYTE-POSITION in PATHNAME, or NIL."
@@ -142,6 +135,49 @@ terminal editor.")
             text
             (subseq text 0 count))))))
 
+(defun definition-edit--name-symbol (name)
+  "Return the defining symbol contained in function NAME."
+  (cond ((symbolp name) name)
+        ((and (consp name) (eq (first name) 'setf) (symbolp (second name)))
+         (second name))
+        (t
+         (find-if #'symbolp name))))
+
+(defun definition-edit--read-forms (text package)
+  "Read every top-level form from TEXT in PACKAGE before evaluating any."
+  (let ((*package* package)
+        (eof (gensym "EOF"))
+        (forms nil))
+    (with-input-from-string (stream text)
+      (loop for form = (read stream nil eof)
+            until (eq form eof)
+            do (push form forms)))
+    (unless forms
+      (definition-edit--fail "the edited definition is empty"))
+    (nreverse forms)))
+
+(defun definition-edit--record-source (name text)
+  "Record TEXT as the current interactive source for function NAME."
+  (let* ((octets (ccl:encode-string-to-octets
+                  text :external-format ':utf-8))
+         (note (ccl::make-source-note
+                :filename nil
+                :start-pos 0
+                :end-pos (length octets)
+                :source octets)))
+    (ccl:record-source-file name 'function note)))
+
+(defun definition-edit--evaluate (text name)
+  "Evaluate edited TEXT in NAME's package and retain it as current source."
+  (let* ((symbol (definition-edit--name-symbol name))
+         (package (or (and symbol (symbol-package symbol)) *package*))
+         (forms (definition-edit--read-forms text package))
+         (*package* package))
+    (dolist (form forms)
+      (eval form))
+    (definition-edit--record-source name text)
+    (values)))
+
 (defun definition-edit--render-diff (before after pathname start-line)
   "Write a Lisp-highlighted Colordiff rendering for BEFORE and AFTER."
   (colordiff:write-ansi
@@ -156,10 +192,12 @@ terminal editor.")
   0)
 
 (defcommand edit (definition)
-  "Edit a recorded function definition in VISUAL or EDITOR, then show a
-syntax-highlighted diff. DEFINITION may be a function, symbol, or SETF name."
-  (multiple-value-bind (before source-path start-line)
+  "Edit a recorded function definition in VISUAL or EDITOR, install it in the
+running image, and show a syntax-highlighted diff. DEFINITION may be a function,
+symbol, or SETF name."
+  (multiple-value-bind (before source-path start-line function name)
       (definition-edit--source definition)
+    (declare (ignore function))
     (let ((editor-words (definition-edit--editor-words)))
       (uiop:with-temporary-file
           (:stream stream
@@ -172,8 +210,12 @@ syntax-highlighted diff. DEFINITION may be a function, symbol, or SETF name."
         (let ((status (definition-edit--run-editor editor-words temporary-path)))
           (unless (zerop status)
             (return-from edit status)))
-        (definition-edit--render-diff
-         before
-         (definition-edit--read-file temporary-path)
-         source-path
-         start-line)))))
+        (let ((after (definition-edit--read-file temporary-path)))
+          (definition-edit--read-forms
+           after
+           (or (symbol-package (definition-edit--name-symbol name)) *package*))
+          (definition-edit--render-diff before after source-path start-line)
+          (definition-edit--evaluate after name)
+          (format t "Updated ~s in the running image.~%" name)
+          (force-output)
+          0)))))

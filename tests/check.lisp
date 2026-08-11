@@ -2305,25 +2305,45 @@
         (cclsh:setenv "EDITOR" old-editor)
         (cclsh::unsetenv "EDITOR"))))
 
-(let ((cclsh::*definition-editor-runner*
-        (lambda (words pathname)
-          (declare (ignore words))
-          (with-open-file (stream pathname
-                                  :direction ':output
-                                  :if-exists ':append
-                                  :external-format ':utf-8)
-            (format stream "~%;; edited by check"))
-          0)))
-  (let* ((output
-           (with-output-to-string (stream)
-             (let ((*standard-output* stream))
-               (check-equal "edit returns success after rendering a diff"
-                            0
-                            (cclsh:edit #'check-edit-fixture)))))
-         (plain (cl-colorist:strip-ansi output)))
-    (check-equal "edit renders the saved text through Colordiff"
-                 t
-                 (not (null (search "edited by check" plain))))))
+(let ((old-function (fdefinition 'check-edit-fixture)))
+  (unwind-protect
+       (let ((cclsh::*definition-editor-runner*
+               (lambda (words pathname)
+                 (declare (ignore words))
+                 (let* ((text (uiop:read-file-string pathname))
+                        (old "(+ value 1)")
+                        (position (search old text)))
+                   (unless position
+                     (error "edit fixture body not found"))
+                   (with-open-file (stream pathname
+                                           :direction ':output
+                                           :if-exists ':supersede
+                                           :external-format ':utf-8)
+                     (write-string text stream :end position)
+                     (write-string "(+ value 10)" stream)
+                     (write-string text stream
+                                   :start (+ position (length old)))))
+                 0)))
+         (let* ((output
+                  (with-output-to-string (stream)
+                    (let ((*standard-output* stream))
+                      (check-equal "edit returns success after redefining"
+                                   0
+                                   (cclsh:edit #'check-edit-fixture)))))
+                (plain (cl-colorist:strip-ansi output)))
+           (check-equal "edit renders the saved text through Colordiff"
+                        t
+                        (not (null (search "(+ value 10)" plain))))
+           (check-equal "edit installs the saved definition in the image"
+                        11
+                        (check-edit-fixture 1))
+           (multiple-value-bind (source pathname line)
+               (cclsh::definition-edit--source #'check-edit-fixture)
+             (declare (ignore pathname line))
+             (check-equal "edit retains the new source for another edit"
+                          t
+                          (not (null (search "(+ value 10)" source)))))))
+    (setf (fdefinition 'check-edit-fixture) old-function)))
 
 (let ((cclsh::*definition-editor-runner*
         (lambda (words pathname)

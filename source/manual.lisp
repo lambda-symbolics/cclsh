@@ -188,9 +188,11 @@ development image. commands lists everything currently defined.
 edit NAME opens the recorded function definition in a temporary UTF-8 Lisp
 file using VISUAL, EDITOR, or vi, in that order. After a successful editor
 exit it displays a Colordiff before-and-after view with Lisp syntax
-highlighting. The temporary file is then removed; the original source is not
-replaced or evaluated. From Lisp, NAME may be a function object or symbol.
-CCL's native source notes provide the definition; no SB-INTROSPECT is needed.")
+highlighting, evaluates the edited form in the function's package, and
+installs the new definition in the running image. The original source file is
+not changed, and the edited text remains available to later edit calls. From
+Lisp, NAME may be a function object or symbol. CCL's native source notes
+provide the definition; no SB-INTROSPECT is needed.")
 
     ("pipelines" "pipe, capture, glob, seq, all and any"
      "Process orchestration is spelled in Lisp. A stage is (name
