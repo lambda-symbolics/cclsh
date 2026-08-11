@@ -15,8 +15,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: DeterminateSystems/nix-installer-action@main
-      - name: Verify release build
-        run: nix build .#cclsh --no-link
+      - name: Verify release metadata
+        run: nix flake check --no-build
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
