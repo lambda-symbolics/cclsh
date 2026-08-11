@@ -35,6 +35,8 @@
            #:*cclsh-build-commit*
            #:*cclsh-build-clinedi-commit*
            #:*cclsh-build-cl-colorist-commit*
+             #:*cclsh-build-colorlisp-commit*
+             #:*cclsh-build-colordiff-commit*
            #:*argv*
            #:*directory-change-hooks*
            #:*prompt-function*
@@ -101,10 +103,11 @@
            #:zi
            #:exit
            #:rehash
-           #:commands
-           #:help
-           #:jobs
-            #:disown
+             #:commands
+             #:help
+             #:edit
+             #:jobs
+             #:disown
            #:fg
            #:bg
            #:export
@@ -133,10 +136,11 @@
                           #:any
                           #:cd
                           #:exit
-                          #:rehash
-                          #:commands
-                          #:help
-                          #:jobs
+                           #:rehash
+                           #:commands
+                           #:help
+                           #:edit
+                           #:jobs
                            #:disown
                           #:fg
                           #:bg

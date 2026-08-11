@@ -145,6 +145,14 @@
      :environment       "CCLSH_CL_COLORIST_SOURCE"
      :default-directory "../cl-colorist/"
      :asd               "cl-colorist.asd")
+    (:name              "colorlisp"
+     :environment       "CCLSH_COLORLISP_SOURCE"
+     :default-directory "../colorlisp/"
+     :asd               "colorlisp.asd")
+    (:name              "colordiff"
+     :environment       "CCLSH_COLORDIFF_SOURCE"
+     :default-directory "../colordiff/"
+     :asd               "colordiff.asd")
     (:name              "clinedi"
      :environment       "CCLSH_CLINEDI_SOURCE"
      :default-directory "../clinedi/"
@@ -202,8 +210,9 @@
   "Verified paths, repositories and commits of loaded source dependencies.")
 
 (defun build-initialize-source-registry (identities)
-  "Expose only this checkout and locked dependency directories to ASDF."
-  (let ((root (truename "./")))
+  "Expose this checkout, locked dependencies and packaged project sources."
+  (let* ((root (truename "./"))
+         (projects (build-getenv-utf-8 "CCLSH_PROJECTS_SOURCE")))
     (asdf:initialize-source-registry
      `(:source-registry
        (:directory ,root)
@@ -213,6 +222,8 @@
               ,(uiop:pathname-directory-pathname
                 (getf identity ':asd))))
           identities)
+       ,@(when (and projects (plusp (length projects)))
+           `((:tree ,(uiop:ensure-directory-pathname projects))))
        :ignore-inherited-configuration)))
   (values))
 
@@ -389,15 +400,21 @@
          (getf (build-loaded-dependency-identity "clinedi") ':commit))
        (cl-colorist-commit
          (getf (build-loaded-dependency-identity "cl-colorist") ':commit))
+       (colorlisp-commit
+         (getf (build-loaded-dependency-identity "colorlisp") ':commit))
+       (colordiff-commit
+         (getf (build-loaded-dependency-identity "colordiff") ':commit))
        (quicklisp-template
          (build-getenv-utf-8 "CCLSH_PACKAGED_QUICKLISP_TEMPLATE"))
        (quicklisp-files
          (unless (and quicklisp-template
                       (plusp (length quicklisp-template)))
            (build-quicklisp-template-files))))
-  (setf cclsh:*cclsh-build-commit*          commit
-        cclsh:*cclsh-build-clinedi-commit* clinedi-commit
+  (setf cclsh:*cclsh-build-commit*             commit
+        cclsh:*cclsh-build-clinedi-commit*     clinedi-commit
         cclsh:*cclsh-build-cl-colorist-commit* cl-colorist-commit
+        cclsh:*cclsh-build-colorlisp-commit*   colorlisp-commit
+        cclsh:*cclsh-build-colordiff-commit*   colordiff-commit
         cclsh::*packaged-quicklisp-template*
         (and quicklisp-template
              (plusp (length quicklisp-template))

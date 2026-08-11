@@ -181,10 +181,16 @@ Ctrl-C, Ctrl-Z and fg. Direct CCL:RUN-PROGRAM calls and separately
 created Lisp threads bypass this inheritance.
 
 Builtins: cd (with -), exit, export, unset, rehash, commands, help,
-jobs, disown, fg, bg and zoxide-setup. Saved cclsh images include Quicklisp;
-quicklisp-setup loads or installs it when running from an unsaved development
-image.
-commands lists everything currently defined.")
+edit, jobs, disown, fg, bg and zoxide-setup. Saved cclsh images include
+Quicklisp; quicklisp-setup loads or installs it when running from an unsaved
+development image. commands lists everything currently defined.
+
+edit NAME opens the recorded function definition in a temporary UTF-8 Lisp
+file using VISUAL, EDITOR, or vi, in that order. After a successful editor
+exit it displays a Colordiff before-and-after view with Lisp syntax
+highlighting. The temporary file is then removed; the original source is not
+replaced or evaluated. From Lisp, NAME may be a function object or symbol.
+CCL's native source notes provide the definition; no SB-INTROSPECT is needed.")
 
     ("pipelines" "pipe, capture, glob, seq, all and any"
      "Process orchestration is spelled in Lisp. A stage is (name

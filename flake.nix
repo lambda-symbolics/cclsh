@@ -39,6 +39,8 @@
       cclRev = dependencyRevision "ccl";
       clinediRev = dependencyRevision "clinedi";
       clColoristRev = dependencyRevision "cl-colorist";
+      colorlispRev = dependencyRevision "colorlisp";
+      colordiffRev = dependencyRevision "colordiff";
 
       clinediSource = pkgs.fetchgit {
         name = "clinedi-${builtins.substring 0 7 clinediRev}";
@@ -52,7 +54,23 @@
         name = "cl-colorist-${builtins.substring 0 7 clColoristRev}";
         url = "https://github.com/luciusmagn/cl-colorist.git";
         rev = clColoristRev;
-        hash = "sha256-Y4DC47Rqg+V6OR7w/wiq2zf8vKu2HUtK70PZZS+V8SA=";
+        hash = "sha256-xo+U65B57TCQdJDsokdGtiG0jW5oJiq/cQW6rTlgXic=";
+        leaveDotGit = true;
+      };
+
+      colorlispSource = pkgs.fetchgit {
+        name = "colorlisp-${builtins.substring 0 7 colorlispRev}";
+        url = "https://github.com/luciusmagn/colorlisp.git";
+        rev = colorlispRev;
+        hash = "sha256-MtvbDJlQkpIG947+XWfTcmtP6Sq5PALPxMQaubkyz+E=";
+        leaveDotGit = true;
+      };
+
+      colordiffSource = pkgs.fetchgit {
+        name = "colordiff-${builtins.substring 0 7 colordiffRev}";
+        url = "https://github.com/luciusmagn/colordiff.git";
+        rev = colordiffRev;
+        hash = "sha256-B3DsZb8WsRqKPn4Al8SiQ+HhBSJ95nZukmeB2nXU/eI=";
         leaveDotGit = true;
       };
 
@@ -103,6 +121,33 @@
         url = "https://beta.quicklisp.org/dist/quicklisp/2026-01-01/systems.txt";
         hash = "sha256-y4MJMhhAiHtUL6hT3E/pX5pOotfKAoxSHTK2fSvfUcc=";
       };
+
+      quicklispProjectArchives = [
+        (pkgs.fetchurl {
+          url = "https://beta.quicklisp.org/archive/alexandria/2024-10-12/alexandria-20241012-git.tgz";
+          hash = "md5-JEO5hs0nYPvZM4YxHw3OIQ==";
+        })
+        (pkgs.fetchurl {
+          url = "https://beta.quicklisp.org/archive/babel/2026-01-01/babel-20260101-git.tgz";
+          hash = "md5-YJwiEo3h/ZML21J9j5hSlw==";
+        })
+        (pkgs.fetchurl {
+          url = "https://beta.quicklisp.org/archive/cffi/2026-01-01/cffi-20260101-git.tgz";
+          hash = "md5-RubiAmn0u6CgzHk6+Sc6Ww==";
+        })
+        (pkgs.fetchurl {
+          url = "https://beta.quicklisp.org/archive/cl-ppcre/2025-06-22/cl-ppcre-20250622-git.tgz";
+          hash = "md5-5poTLfO75dJRc3g0wP267Q==";
+        })
+        (pkgs.fetchurl {
+          url = "https://beta.quicklisp.org/archive/trivial-features/2025-06-22/trivial-features-20250622-git.tgz";
+          hash = "md5-m6Er6bTs1leX6t9BRzmJ8A==";
+        })
+        (pkgs.fetchurl {
+          url = "https://beta.quicklisp.org/archive/trivial-gray-streams/2024-10-12/trivial-gray-streams-20241012-git.tgz";
+          hash = "md5-rw1kuvtgMmWRUqWvqzi/3w==";
+        })
+      ];
 
       quicklispTemplate =
         pkgs.runCommand "cclsh-quicklisp-2026-01-01"
@@ -202,6 +247,20 @@
           git -C "$out/share/cclsh/cl-colorist" reset --hard ${clColoristRev}
           git -C "$out/share/cclsh/cl-colorist" clean -fdx
 
+          cp -R ${colorlispSource} "$out/share/cclsh/colorlisp"
+          chmod -R u+w "$out/share/cclsh/colorlisp"
+          git -C "$out/share/cclsh/colorlisp" reset --hard ${colorlispRev}
+          git -C "$out/share/cclsh/colorlisp" clean -fdx
+
+          cp -R ${colordiffSource} "$out/share/cclsh/colordiff"
+          chmod -R u+w "$out/share/cclsh/colordiff"
+          git -C "$out/share/cclsh/colordiff" reset --hard ${colordiffRev}
+          git -C "$out/share/cclsh/colordiff" clean -fdx
+
+          for archive in ${lib.concatStringsSep " " (map toString quicklispProjectArchives)}; do
+            tar -xf "$archive" -C "$out/share/cclsh"
+          done
+
           cp -R ${quicklispTemplate} "$TMPDIR/quicklisp"
           chmod -R u+w "$TMPDIR/quicklisp"
           mkdir -p "$TMPDIR/quicklisp/local-init"
@@ -215,6 +274,9 @@
           export CCLSH_BUILD_COMMIT=${lib.escapeShellArg buildCommit}
           export CCLSH_CLINEDI_SOURCE="$out/share/cclsh/clinedi"
           export CCLSH_CL_COLORIST_SOURCE="$out/share/cclsh/cl-colorist"
+          export CCLSH_COLORLISP_SOURCE="$out/share/cclsh/colorlisp"
+          export CCLSH_COLORDIFF_SOURCE="$out/share/cclsh/colordiff"
+          export CCLSH_PROJECTS_SOURCE="$out/share/cclsh"
           export CCLSH_QUICKLISP_SETUP="$TMPDIR/quicklisp/setup.lisp"
           export CCLSH_PACKAGED_QUICKLISP_TEMPLATE="$out/share/cclsh/quicklisp"
           export ASDF_OUTPUT_TRANSLATIONS="$PWD/:$TMPDIR/cclsh-fasl/"
@@ -234,6 +296,8 @@
           cp -R ${quicklispTemplate}/. "$out/share/cclsh/quicklisp/"
           rm -rf "$out/share/cclsh/clinedi/.git"
           rm -rf "$out/share/cclsh/cl-colorist/.git"
+          rm -rf "$out/share/cclsh/colorlisp/.git"
+          rm -rf "$out/share/cclsh/colordiff/.git"
 
           runHook postInstall
         '';

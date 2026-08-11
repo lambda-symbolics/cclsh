@@ -32,6 +32,10 @@
     (write-string contents stream))
   path)
 
+(defun check-edit-fixture (value)
+  "Source-note fixture for the EDIT command checks."
+  (+ value 1))
+
 (defun check-set-locale (locale)
   "Set Linux LC_ALL to LOCALE, or query it when LOCALE is NIL."
   (let ((pointer
@@ -2267,6 +2271,67 @@
                (second result)))
 
 
+
+
+;;;; -- Definition editing --
+
+(multiple-value-bind (source pathname line)
+    (cclsh::definition-edit--source #'check-edit-fixture)
+  (declare (ignore pathname line))
+  (check-equal "edit source note contains the fixture definition"
+               t
+               (not (null (search "(defun check-edit-fixture" source
+                                  :test #'char-equal)))))
+
+(check-equal "edit source line counts from one"
+             1
+             (cclsh::definition-edit--source-line
+              (truename "source/builtins.lisp")
+              0))
+
+(let ((old-visual (cclsh:getenv "VISUAL"))
+      (old-editor (cclsh:getenv "EDITOR")))
+  (unwind-protect
+       (progn
+         (cclsh:setenv "VISUAL" "visual-editor --wait")
+         (cclsh:setenv "EDITOR" "ignored-editor")
+         (check-equal "edit prefers VISUAL and parses its arguments"
+                      '("visual-editor" "--wait")
+                      (cclsh::definition-edit--editor-words)))
+    (if old-visual
+        (cclsh:setenv "VISUAL" old-visual)
+        (cclsh::unsetenv "VISUAL"))
+    (if old-editor
+        (cclsh:setenv "EDITOR" old-editor)
+        (cclsh::unsetenv "EDITOR"))))
+
+(let ((cclsh::*definition-editor-runner*
+        (lambda (words pathname)
+          (declare (ignore words))
+          (with-open-file (stream pathname
+                                  :direction ':output
+                                  :if-exists ':append
+                                  :external-format ':utf-8)
+            (format stream "~%;; edited by check"))
+          0)))
+  (let* ((output
+           (with-output-to-string (stream)
+             (let ((*standard-output* stream))
+               (check-equal "edit returns success after rendering a diff"
+                            0
+                            (cclsh:edit #'check-edit-fixture)))))
+         (plain (cl-colorist:strip-ansi output)))
+    (check-equal "edit renders the saved text through Colordiff"
+                 t
+                 (not (null (search "edited by check" plain))))))
+
+(let ((cclsh::*definition-editor-runner*
+        (lambda (words pathname)
+          (declare (ignore words pathname))
+          17)))
+  (check-equal "edit returns a failing editor status without diffing"
+               17
+               (cclsh:edit #'check-edit-fixture)))
 ;;;; -- Result --
 
 (cond (*check-failures*

@@ -43,35 +43,56 @@ fi
              (unless (and setup (probe-file setup))
                (error "Quicklisp setup is unavailable: ~a" setup))
              (load setup :verbose nil :external-format :utf-8))
-           (uiop:symbol-call (quote #:ql)
-                             (quote #:register-local-projects))
-           (labels ((load-local-system (name)
-                      (asdf:clear-system name)
-                      (let ((local-asd
-                              (uiop:symbol-call
-                               (quote #:ql)
-                               (quote #:local-projects-searcher)
-                               name)))
-                        (unless local-asd
-                          (error
-                           "Quicklisp local projects do not contain ~a"
-                           name))
-                        (setf local-asd (truename local-asd))
-                        (asdf:load-asd local-asd)
-                        (let ((selected
-                                (truename
-                                 (asdf:system-source-file
-                                  (asdf:find-system name)))))
-                          (unless (equal local-asd selected)
-                            (error
-                             "ASDF selected ~a from ~a instead of ~a"
-                             name selected local-asd)))
-                        (asdf:load-system name :force t))))
-             (load-local-system "cl-colorist")
-             (load-local-system "clinedi"))
-           (asdf:test-system "cl-colorist")
-           (asdf:test-system "clinedi")
-           (load "tests/check.lisp" :external-format :utf-8))
+            (let* ((root (truename "./"))
+                   (specifications
+                     (quote
+                      (("cl-colorist" "CCLSH_CL_COLORIST_SOURCE"
+                        "../cl-colorist/" "cl-colorist.asd")
+                       ("colorlisp" "CCLSH_COLORLISP_SOURCE"
+                        "../colorlisp/" "colorlisp.asd")
+                       ("colordiff" "CCLSH_COLORDIFF_SOURCE"
+                        "../colordiff/" "colordiff.asd")
+                       ("clinedi" "CCLSH_CLINEDI_SOURCE"
+                        "../clinedi/" "clinedi.asd"))))
+                   (systems
+                     (mapcar
+                      (lambda (specification)
+                        (destructuring-bind
+                            (name environment default-directory asd-name)
+                            specification
+                          (let* ((override (uiop:getenv environment))
+                                 (directory
+                                   (if (and override (plusp (length override)))
+                                       (uiop:ensure-directory-pathname override)
+                                       (merge-pathnames default-directory root)))
+                                 (asd (truename
+                                       (merge-pathnames asd-name directory))))
+                            (list name asd))))
+                      specifications)))
+              (asdf:initialize-source-registry
+               `(:source-registry
+                 (:directory ,root)
+                 ,@(mapcar
+                    (lambda (system)
+                      `(:directory
+                        ,(uiop:pathname-directory-pathname (second system))))
+                    systems)
+                 :ignore-inherited-configuration))
+              (dolist (system systems)
+                (destructuring-bind (name asd) system
+                  (asdf:clear-system name)
+                  (asdf:load-asd asd)
+                  (let ((selected
+                          (truename
+                           (asdf:system-source-file (asdf:find-system name)))))
+                    (unless (equal asd selected)
+                      (error "ASDF selected ~a from ~a instead of ~a"
+                             name selected asd)))
+                  (asdf:load-system name :force t))))
+            (dolist (system (quote ("cl-colorist" "colorlisp" "colordiff"
+                                     "clinedi")))
+              (asdf:test-system system))
+            (load "tests/check.lisp" :external-format :utf-8))
        (serious-condition (condition)
          (format *error-output* "cclsh check loader failed: ~a~%" condition)
          (ccl:quit 1)))' </dev/null

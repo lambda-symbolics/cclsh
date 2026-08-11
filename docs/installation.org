@@ -69,22 +69,25 @@ Source development is tested with CCL 1.13 on Linux x86-64. It requires:
 zoxide is optional. Install =fzf= as well to use zoxide's interactive =zi=
 command.
 
-** Fetch editor dependencies
+** Fetch source dependencies
 
-Clone Clinedi and cl-colorist beside the cclsh checkout and select their locked
-revisions:
+Clone Clinedi, cl-colorist, ColorLisp and Colordiff beside the cclsh checkout,
+then select their locked revisions:
 
 #+begin_src sh
 git clone https://github.com/luciusmagn/clinedi.git ../clinedi
 git clone https://github.com/luciusmagn/cl-colorist.git ../cl-colorist
-clinedi_commit=$(sed -n 's/^clinedi=//p' dependencies.lock)
-cl_colorist_commit=$(sed -n 's/^cl-colorist=//p' dependencies.lock)
-git -C ../clinedi checkout --detach "$clinedi_commit"
-git -C ../cl-colorist checkout --detach "$cl_colorist_commit"
+git clone https://github.com/luciusmagn/colorlisp.git ../colorlisp
+git clone https://github.com/luciusmagn/colordiff.git ../colordiff
+for dependency in clinedi cl-colorist colorlisp colordiff; do
+    commit=$(sed -n "s/^$dependency=//p" dependencies.lock)
+    git -C "../$dependency" checkout --detach "$commit"
+done
 #+end_src
 
-Set =CCLSH_CLINEDI_SOURCE= or =CCLSH_CL_COLORIST_SOURCE= when a checkout is not
-at its default sibling path. The build refuses a non-Git checkout, local
+Set =CCLSH_CLINEDI_SOURCE=, =CCLSH_CL_COLORIST_SOURCE=,
+=CCLSH_COLORLISP_SOURCE= or =CCLSH_COLORDIFF_SOURCE= when a checkout is not at
+its default sibling path. The build refuses a non-Git checkout, local
 modifications or a revision mismatch.
 
 For interactive Quicklisp development, register the directory containing the
@@ -99,9 +102,9 @@ path with your checkout parent:
 #+end_src
 
 Set =CCLSH_QUICKLISP_SETUP= when Quicklisp's =setup.lisp= is elsewhere. Saved
-images include Quicklisp, Clinedi and cl-colorist, but the build copies only an
-allowlist of Quicklisp metadata. Personal local init files, proxy settings,
-caches and downloaded systems do not enter the image.
+images include Quicklisp and the four locked source dependencies, but the build
+copies only an allowlist of Quicklisp metadata. Personal local init files,
+proxy settings, caches and downloaded systems do not enter the image.
 
 ** Run from stock CCL
 

@@ -182,6 +182,31 @@ after =(in-package ...)=. The built-in prompt displays the package directly.
 Direct calls to CCL's lower-level =run-program= made elsewhere bypass the
 refresh performed by cclsh's command and prompt boundaries.
 
+* Editing recorded definitions
+
+=edit= opens a function's recorded source in a temporary UTF-8 Lisp file. It
+uses =VISUAL= first, then =EDITOR=, and falls back to =vi=. Editor values may
+include arguments, such as =emacsclient --wait=.
+
+#+begin_src text
+edit my-function
+edit cl:mapcar
+#+end_src
+
+From Lisp, a function object or symbol can be supplied directly:
+
+#+begin_src lisp
+(edit #'my-function)
+(edit 'my-function)
+#+end_src
+
+After the editor exits successfully, cclsh displays the before-and-after text
+with Colordiff and Lisp syntax highlighting. The temporary file is removed
+afterward; =edit= does not replace or evaluate the original source file. CCL's
+native source-note database provides the definition, so this does not require
+SB-INTROSPECT. Definitions compiled without retained source information cannot
+be edited this way.
+
 * Defining your own commands
 
 =defcommand= creates a command callable both from the command line and

@@ -24,6 +24,14 @@
   "cl-colorist commit included in the running binary, stamped into the
    image by scripts/build.lisp. NIL in plain REPL sessions.")
 
+(defvar *cclsh-build-colorlisp-commit* nil
+  "ColorLisp commit included in the running binary, stamped into the
+   image by scripts/build.lisp. NIL in plain REPL sessions.")
+
+(defvar *cclsh-build-colordiff-commit* nil
+  "Colordiff commit included in the running binary, stamped into the
+   image by scripts/build.lisp. NIL in plain REPL sessions.")
+
 (defun terminal--encoding-leaves (&rest roots)
   "Return the distinct base streams below composite stream ROOTS."
   (let ((pending (copy-list roots))
@@ -330,11 +338,14 @@
        (shell--run-script operand script-arguments))
       (:version
        (format t "cclsh ~a~@[ (~a)~]~@[ (clinedi ~a)~]~
-                  ~@[ (cl-colorist ~a)~] (~a ~a)~%"
+                  ~@[ (cl-colorist ~a)~]~@[ (colorlisp ~a)~]~
+                  ~@[ (colordiff ~a)~] (~a ~a)~%"
                *cclsh-version*
                *cclsh-build-commit*
                *cclsh-build-clinedi-commit*
                *cclsh-build-cl-colorist-commit*
+               *cclsh-build-colorlisp-commit*
+               *cclsh-build-colordiff-commit*
                (lisp-implementation-type)
                (lisp-implementation-version))
        (shell-quit 0))

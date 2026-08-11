@@ -3,7 +3,7 @@
   :author "Lukáš Hozda"
   :license "ISC"
   :encoding :utf-8
-  :depends-on ("clinedi")
+  :depends-on ("clinedi" "colordiff")
   :components ((:module "source"
                 :components
                 ((:file "package")
@@ -23,6 +23,7 @@
                  (:file "directory"
                   :depends-on ("command" "jobs" "expand" "terminal" "pipeline"))
                  (:file "complete" :depends-on ("lexer" "command" "expand" "highlight"))
+                 (:file "edit" :depends-on ("command" "jobs" "expand" "environment"))
                  (:file "builtins" :depends-on ("command" "jobs" "expand" "terminal" "history" "complete"))
                  (:file "manual"   :depends-on ("command" "terminal"))
                  (:file "line-editor" :depends-on ("terminal" "highlight" "history" "complete"))

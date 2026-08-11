@@ -113,11 +113,11 @@ locked_dependency_commit()
     printf '%s\n' "$dependency_commit"
 }
 if ! expected_clinedi_commit=$(locked_dependency_commit clinedi) ||
-   ! expected_cl_colorist_commit=$(
-       locked_dependency_commit cl-colorist
-   )
+   ! expected_cl_colorist_commit=$(locked_dependency_commit cl-colorist) ||
+   ! expected_colorlisp_commit=$(locked_dependency_commit colorlisp) ||
+   ! expected_colordiff_commit=$(locked_dependency_commit colordiff)
 then
-    echo "cclsh build: dependencies.lock has invalid editor revisions" >&2
+    echo "cclsh build: dependencies.lock has invalid dependency revisions" >&2
     exit 1
 fi
 build_root=$PWD
@@ -131,6 +131,8 @@ if ! (
      CCLSH_QUICKLISP_SETUP="$validation_home/setup.lisp" \
      CCLSH_EXPECTED_CLINEDI_COMMIT="$expected_clinedi_commit" \
      CCLSH_EXPECTED_CL_COLORIST_COMMIT="$expected_cl_colorist_commit" \
+     CCLSH_EXPECTED_COLORLISP_COMMIT="$expected_colorlisp_commit" \
+     CCLSH_EXPECTED_COLORDIFF_COMMIT="$expected_colordiff_commit" \
      LANG=C \
      LC_ALL=C \
      /usr/bin/timeout --signal=TERM --kill-after=1 \
@@ -155,17 +157,29 @@ if ! (
              (strip-ansi
                (and cl-colorist-package
                     (find-symbol "STRIP-ANSI" cl-colorist-package)))
+             (colorlisp-package (find-package "COLORLISP"))
+             (language-detect
+               (and colorlisp-package
+                    (find-symbol "LANGUAGE-DETECT" colorlisp-package)))
+             (colordiff-package (find-package "COLORDIFF"))
+             (render-diff
+               (and colordiff-package
+                    (find-symbol "RENDER-DIFF" colordiff-package)))
              (expected-clinedi
                (cclsh:getenv "CCLSH_EXPECTED_CLINEDI_COMMIT"))
              (expected-cl-colorist
-               (cclsh:getenv "CCLSH_EXPECTED_CL_COLORIST_COMMIT")))
+               (cclsh:getenv "CCLSH_EXPECTED_CL_COLORIST_COMMIT"))
+             (expected-colorlisp
+               (cclsh:getenv "CCLSH_EXPECTED_COLORLISP_COMMIT"))
+             (expected-colordiff
+               (cclsh:getenv "CCLSH_EXPECTED_COLORDIFF_COMMIT")))
         (when local-directories
           (setf (symbol-value local-directories)
                 (list #P"/definitely/missing/editor-local-projects/")))
-        (let ((clear-system (find-symbol "CLEAR-SYSTEM" "ASDF")))
-          (when (and clear-system (fboundp clear-system))
-            (funcall clear-system "clinedi")
-            (funcall clear-system "cl-colorist")))
+         (let ((clear-system (find-symbol "CLEAR-SYSTEM" "ASDF")))
+           (when (and clear-system (fboundp clear-system))
+             (dolist (system (quote ("clinedi" "cl-colorist")))
+               (funcall clear-system system))))
         (unless (and quickload (fboundp quickload))
           (error "saved image does not provide QL:QUICKLOAD"))
         (unless (and edit-line (fboundp edit-line)
@@ -182,6 +196,17 @@ if ! (
                                (code-char 27)
                                (code-char 27)))))
           (error "saved image does not contain functional cl-colorist code"))
+         (unless (and language-detect
+                      (fboundp language-detect)
+                      (funcall language-detect "definition.lisp"))
+           (error "saved image does not contain functional ColorLisp code"))
+         (unless (and render-diff
+                      (fboundp render-diff)
+                      (funcall render-diff
+                               :removed-content "(foo 1)"
+                               :added-content "(foo 2)"
+                               :source-path "definition.lisp"))
+           (error "saved image does not contain functional Colordiff code"))
         (unless (and expected-clinedi
                      (string= expected-clinedi
                               cclsh:*cclsh-build-clinedi-commit*))
@@ -195,6 +220,20 @@ if ! (
            "saved image cl-colorist commit ~s does not match lock ~s"
            cclsh:*cclsh-build-cl-colorist-commit*
            expected-cl-colorist))
+         (unless (and expected-colorlisp
+                      (string= expected-colorlisp
+                               cclsh:*cclsh-build-colorlisp-commit*))
+           (error
+            "saved image ColorLisp commit ~s does not match lock ~s"
+            cclsh:*cclsh-build-colorlisp-commit*
+            expected-colorlisp))
+         (unless (and expected-colordiff
+                      (string= expected-colordiff
+                               cclsh:*cclsh-build-colordiff-commit*))
+           (error
+            "saved image Colordiff commit ~s does not match lock ~s"
+            cclsh:*cclsh-build-colordiff-commit*
+            expected-colordiff))
         (values))'
      )
 then
