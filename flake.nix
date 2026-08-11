@@ -205,7 +205,7 @@
 
       cclsh = pkgs.stdenv.mkDerivation {
         pname = "cclsh";
-        version = "1.1.0";
+        version = "1.2.0";
         src = self;
 
         nativeBuildInputs = [
@@ -337,7 +337,7 @@
           chmod 700 "$XDG_RUNTIME_DIR"
 
           ${lib.getExe cclsh} --version >version
-          grep -F "cclsh 1.1.0" version
+          grep -F "cclsh 1.2.0" version
           grep -F "clinedi ${clinediRev}" version
           grep -F "cl-colorist ${clColoristRev}" version
           ${lib.getExe cclsh} -c 'exit 0'

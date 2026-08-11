@@ -9,7 +9,7 @@
 
 (in-package #:cclsh)
 
-(defparameter *cclsh-version* "1.1.0"
+(defparameter *cclsh-version* "1.2.0"
   "The cclsh version reported by --version.")
 
 (defvar *cclsh-build-commit* nil
