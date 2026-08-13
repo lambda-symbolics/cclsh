@@ -20,6 +20,10 @@
   "Clinedi commit included in the running binary, stamped into the
    image by scripts/build.lisp. NIL in plain REPL sessions.")
 
+(defvar *cclsh-build-structlisp-commit* nil
+  "StructLisp commit included in the running binary, stamped into the
+   image by scripts/build.lisp. NIL in plain REPL sessions.")
+
 (defvar *cclsh-build-cl-colorist-commit* nil
   "cl-colorist commit included in the running binary, stamped into the
    image by scripts/build.lisp. NIL in plain REPL sessions.")
@@ -338,11 +342,12 @@
        (shell--run-script operand script-arguments))
       (:version
        (format t "cclsh ~a~@[ (~a)~]~@[ (clinedi ~a)~]~
-                  ~@[ (cl-colorist ~a)~]~@[ (colorlisp ~a)~]~
-                  ~@[ (colordiff ~a)~] (~a ~a)~%"
+                  ~@[ (structlisp ~a)~]~@[ (cl-colorist ~a)~]~
+                  ~@[ (colorlisp ~a)~]~@[ (colordiff ~a)~] (~a ~a)~%"
                *cclsh-version*
                *cclsh-build-commit*
                *cclsh-build-clinedi-commit*
+               *cclsh-build-structlisp-commit*
                *cclsh-build-cl-colorist-commit*
                *cclsh-build-colorlisp-commit*
                *cclsh-build-colordiff-commit*

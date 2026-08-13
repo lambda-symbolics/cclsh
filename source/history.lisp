@@ -50,9 +50,12 @@
 
 (defun history-load ()
   "Load persisted history into *HISTORY*. Unreadable content is
-   silently ignored; only the newest *HISTORY-LIMIT* entries are kept."
+   silently ignored; only the newest *HISTORY-LIMIT* entries are kept.
+   Loading is bounded, so a large history file does not accumulate an
+   unbounded intermediate list."
   (setf (fill-pointer *history*) 0)
-  (let ((entries nil))
+  (let ((entries (structlisp:make-deque
+                  :maximum-count *history-limit*)))
     (handler-case
         (with-open-file (stream (history-file)
                                 :direction :input
@@ -63,13 +66,10 @@
               (loop for entry = (read stream nil ':cclsh-eof)
                     until (eq entry ':cclsh-eof)
                     when (stringp entry)
-                      do (push entry entries)))))
+                      do (structlisp:deque-push-back entries entry)))))
       (error () nil))
-    (let ((kept (nreverse (if (> (length entries) *history-limit*)
-                              (subseq entries 0 *history-limit*)
-                              entries))))
-      (dolist (entry kept)
-        (vector-push-extend entry *history*))))
+    (loop for entry across (structlisp:deque->vector entries)
+          do (vector-push-extend entry *history*)))
   (values))
 
 (defun history-append (entry)

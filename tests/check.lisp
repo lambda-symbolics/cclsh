@@ -1372,6 +1372,17 @@
                      text
                      (and (= (fill-pointer cclsh::*history*) 1)
                           (aref cclsh::*history* 0)))
+         (let ((cclsh::*history-limit* 2))
+           (check-write-utf8-file
+            (cclsh::history-file)
+            (with-output-to-string (stream)
+              (dolist (entry '("old" "middle" "new"))
+                (prin1 entry stream)
+                (terpri stream))))
+           (cclsh::history-load)
+           (check-equal "history load retains only the newest bounded entries"
+                        '("middle" "new")
+                        (coerce cclsh::*history* 'list)))
         (makunbound startup-symbol)
         (check-write-utf8-file
          (cclsh::startup-file)

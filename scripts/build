@@ -113,6 +113,7 @@ locked_dependency_commit()
     printf '%s\n' "$dependency_commit"
 }
 if ! expected_clinedi_commit=$(locked_dependency_commit clinedi) ||
+   ! expected_structlisp_commit=$(locked_dependency_commit structlisp) ||
    ! expected_cl_colorist_commit=$(locked_dependency_commit cl-colorist) ||
    ! expected_colorlisp_commit=$(locked_dependency_commit colorlisp) ||
    ! expected_colordiff_commit=$(locked_dependency_commit colordiff)
@@ -130,6 +131,7 @@ if ! (
      CCLSH_SAFE=1 \
      CCLSH_QUICKLISP_SETUP="$validation_home/setup.lisp" \
      CCLSH_EXPECTED_CLINEDI_COMMIT="$expected_clinedi_commit" \
+     CCLSH_EXPECTED_STRUCTLISP_COMMIT="$expected_structlisp_commit" \
      CCLSH_EXPECTED_CL_COLORIST_COMMIT="$expected_cl_colorist_commit" \
      CCLSH_EXPECTED_COLORLISP_COMMIT="$expected_colorlisp_commit" \
      CCLSH_EXPECTED_COLORDIFF_COMMIT="$expected_colordiff_commit" \
@@ -153,6 +155,10 @@ if ! (
              (text-cell-width
                (and clinedi-package
                     (find-symbol "TEXT-CELL-WIDTH" clinedi-package)))
+             (structlisp-package (find-package "STRUCTLISP"))
+             (make-deque
+               (and structlisp-package
+                    (find-symbol "MAKE-DEQUE" structlisp-package)))
              (cl-colorist-package (find-package "CL-COLORIST"))
              (strip-ansi
                (and cl-colorist-package
@@ -167,6 +173,8 @@ if ! (
                     (find-symbol "RENDER-DIFF" colordiff-package)))
              (expected-clinedi
                (cclsh:getenv "CCLSH_EXPECTED_CLINEDI_COMMIT"))
+             (expected-structlisp
+               (cclsh:getenv "CCLSH_EXPECTED_STRUCTLISP_COMMIT"))
              (expected-cl-colorist
                (cclsh:getenv "CCLSH_EXPECTED_CL_COLORIST_COMMIT"))
              (expected-colorlisp
@@ -178,14 +186,17 @@ if ! (
                 (list #P"/definitely/missing/editor-local-projects/")))
          (let ((clear-system (find-symbol "CLEAR-SYSTEM" "ASDF")))
            (when (and clear-system (fboundp clear-system))
-             (dolist (system (quote ("clinedi" "cl-colorist")))
-               (funcall clear-system system))))
+              (dolist (system (quote ("clinedi" "structlisp" "cl-colorist")))
+                (funcall clear-system system))))
         (unless (and quickload (fboundp quickload))
           (error "saved image does not provide QL:QUICKLOAD"))
         (unless (and edit-line (fboundp edit-line)
                      text-cell-width (fboundp text-cell-width)
                      (= 4 (funcall text-cell-width "你好")))
           (error "saved image does not contain functional Clinedi code"))
+         (unless (and make-deque (fboundp make-deque)
+                      (funcall make-deque :maximum-count 1))
+           (error "saved image does not contain functional StructLisp code"))
         (unless (and strip-ansi
                      (fboundp strip-ansi)
                      (string=
@@ -212,6 +223,11 @@ if ! (
                               cclsh:*cclsh-build-clinedi-commit*))
           (error "saved image Clinedi commit ~s does not match lock ~s"
                  cclsh:*cclsh-build-clinedi-commit* expected-clinedi))
+         (unless (and expected-structlisp
+                      (string= expected-structlisp
+                               cclsh:*cclsh-build-structlisp-commit*))
+           (error "saved image StructLisp commit ~s does not match lock ~s"
+                  cclsh:*cclsh-build-structlisp-commit* expected-structlisp))
         (unless (and expected-cl-colorist
                      (string=
                       expected-cl-colorist

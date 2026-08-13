@@ -52,6 +52,8 @@ fi
                         "../colorlisp/" "colorlisp.asd")
                        ("colordiff" "CCLSH_COLORDIFF_SOURCE"
                         "../colordiff/" "colordiff.asd")
+                       ("structlisp" "CCLSH_STRUCTLISP_SOURCE"
+                        "../structlisp/" "structlisp.asd")
                        ("clinedi" "CCLSH_CLINEDI_SOURCE"
                         "../clinedi/" "clinedi.asd"))))
                    (systems
@@ -90,7 +92,7 @@ fi
                              name selected asd)))
                   (asdf:load-system name :force t))))
             (dolist (system (quote ("cl-colorist" "colorlisp" "colordiff"
-                                     "clinedi")))
+                                     "structlisp" "clinedi")))
               (asdf:test-system system))
             (load "tests/check.lisp" :external-format :utf-8))
        (serious-condition (condition)

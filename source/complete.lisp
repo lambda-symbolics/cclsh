@@ -12,22 +12,30 @@
        (string= prefix string :end2 (length prefix))))
 
 (defun path-command-names ()
-  "All executable names found in PATH, sorted and deduplicated.
+  "Executable names found in PATH as a sorted prefix index.
    Cached until PATH changes or REHASH clears the cache."
   (let ((path (or (getenv "PATH") "")))
     (unless (and *path-command-names*
                  (equal path *path-command-names-source*))
-      (let ((names nil))
+      (let ((names (make-hash-table :test #'equal)))
         (dolist (directory (path-directories))
           (multiple-value-bind (files subdirectories)
               (directory-entry-names directory)
             (declare (ignore subdirectories))
             (dolist (file files)
-              (push file names))))
-        (setf *path-command-names*
-              (sort (remove-duplicates names :test #'string=) #'string<))
-        (setf *path-command-names-source* path))))
-  *path-command-names*)
+              (setf (gethash file names) t))))
+        (let ((unique (make-array (hash-table-count names)))
+              (index 0))
+          (maphash (lambda (name present)
+                     (declare (ignore present))
+                     (setf (aref unique index) name)
+                     (incf index))
+                   names)
+          (setf *path-command-names*
+                (structlisp:make-sorted-string-index
+                 :initial-contents unique)))
+        (setf *path-command-names-source* path)))
+    *path-command-names*))
 
 (defun shell-command-names ()
   "Names of the COMMAND instances currently visible, downcased."
@@ -157,14 +165,19 @@
 (defun completion--commands (prefix &key clean-prefix-p)
   "Command name candidates matching PREFIX.
    Returns (values candidates displays)."
-  (let* ((clean   (if clean-prefix-p prefix (escape-remove prefix)))
-         (matches (sort (remove-duplicates
-                         (remove-if-not (lambda (name)
-                                          (string-prefix-p clean name))
-                                        (append (shell-command-names)
-                                                (path-command-names)))
-                         :test #'string=)
-                        #'string<)))
+  (let* ((clean (if clean-prefix-p prefix (escape-remove prefix)))
+         (path-matches
+           (coerce (structlisp:sorted-string-index-prefix-items
+                    (path-command-names) clean)
+                   'list))
+         (matches
+           (sort (remove-duplicates
+                  (append (remove-if-not (lambda (name)
+                                           (string-prefix-p clean name))
+                                         (shell-command-names))
+                          path-matches)
+                  :test #'string=)
+                 #'string<)))
     (values (mapcar #'completion--escape matches)
             (mapcar #'completion--display matches))))
 

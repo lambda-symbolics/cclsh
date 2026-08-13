@@ -28,8 +28,8 @@
   "The PATH value *PATH-CACHE* was built against.")
 
 (defvar *path-command-names* nil
-  "Cached sorted list of executable names found in PATH, for
-   completion.")
+  "Cached sorted string index of executable names found in PATH, for
+   prefix completion.")
 
 (defvar *path-command-names-source* nil
   "The PATH value *PATH-COMMAND-NAMES* was built against.")
@@ -1238,11 +1238,12 @@ argument unchanged."
 ;;; Resolution
 
 (defun path-command-names-note (name)
-  "Record NAME in the completion name cache after a fresh PATH hit."
-  (when (and *path-command-names*
-             (not (member name *path-command-names* :test #'string=)))
-    (setf *path-command-names*
-          (merge 'list (list name) *path-command-names* #'string<)))
+  "Record NAME in the completion name index after a fresh PATH hit."
+  (when *path-command-names*
+    (multiple-value-bind (start end)
+        (structlisp:sorted-string-index-equal-range *path-command-names* name)
+      (when (= start end)
+        (structlisp:sorted-string-index-insert *path-command-names* name))))
   (values))
 
 (defun command-resolve (word)

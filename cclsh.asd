@@ -3,7 +3,7 @@
   :author "Lukáš Hozda"
   :license "ISC"
   :encoding :utf-8
-  :depends-on ("clinedi" "colordiff")
+  :depends-on ("clinedi" "colordiff" "structlisp")
   :components ((:module "source"
                 :components
                 ((:file "package")

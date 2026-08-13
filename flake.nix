@@ -38,6 +38,7 @@
       cclXstateRev = dependencyRevision "ccl-xstate";
       cclRev = dependencyRevision "ccl";
       clinediRev = dependencyRevision "clinedi";
+      structlispRev = dependencyRevision "structlisp";
       clColoristRev = dependencyRevision "cl-colorist";
       colorlispRev = dependencyRevision "colorlisp";
       colordiffRev = dependencyRevision "colordiff";
@@ -46,7 +47,15 @@
         name = "clinedi-${builtins.substring 0 7 clinediRev}";
         url = "https://github.com/lambda-symbolics/clinedi.git";
         rev = clinediRev;
-        hash = "sha256-1H4dHkIw9/w5bg5ZDpYTePKBfONlc2eROgs1ynI80ao=";
+        hash = "sha256-c+v7GO8qF7E11b2YlYYGzoWI1NUUcjo5TZtXWWBFeU0=";
+        leaveDotGit = true;
+      };
+
+      structlispSource = pkgs.fetchgit {
+        name = "structlisp-${builtins.substring 0 7 structlispRev}";
+        url = "https://github.com/lambda-symbolics/structlisp.git";
+        rev = structlispRev;
+        hash = "sha256-hz+vHx7WNA1QLpS9bUzyMufeBxoce6qjjWliKp4WKtQ=";
         leaveDotGit = true;
       };
 
@@ -242,6 +251,11 @@
           git -C "$out/share/cclsh/clinedi" reset --hard ${clinediRev}
           git -C "$out/share/cclsh/clinedi" clean -fdx
 
+          cp -R ${structlispSource} "$out/share/cclsh/structlisp"
+          chmod -R u+w "$out/share/cclsh/structlisp"
+          git -C "$out/share/cclsh/structlisp" reset --hard ${structlispRev}
+          git -C "$out/share/cclsh/structlisp" clean -fdx
+
           cp -R ${clColoristSource} "$out/share/cclsh/cl-colorist"
           chmod -R u+w "$out/share/cclsh/cl-colorist"
           git -C "$out/share/cclsh/cl-colorist" reset --hard ${clColoristRev}
@@ -273,6 +287,7 @@
           export CCLSH_CCL_IMAGE=${patchedCcl}/share/ccl-installation/lx86cl64.image
           export CCLSH_BUILD_COMMIT=${lib.escapeShellArg buildCommit}
           export CCLSH_CLINEDI_SOURCE="$out/share/cclsh/clinedi"
+          export CCLSH_STRUCTLISP_SOURCE="$out/share/cclsh/structlisp"
           export CCLSH_CL_COLORIST_SOURCE="$out/share/cclsh/cl-colorist"
           export CCLSH_COLORLISP_SOURCE="$out/share/cclsh/colorlisp"
           export CCLSH_COLORDIFF_SOURCE="$out/share/cclsh/colordiff"
@@ -295,6 +310,7 @@
           cp -L cclsh-fast "$out/bin/cclsh-fast"
           cp -R ${quicklispTemplate}/. "$out/share/cclsh/quicklisp/"
           rm -rf "$out/share/cclsh/clinedi/.git"
+          rm -rf "$out/share/cclsh/structlisp/.git"
           rm -rf "$out/share/cclsh/cl-colorist/.git"
           rm -rf "$out/share/cclsh/colorlisp/.git"
           rm -rf "$out/share/cclsh/colordiff/.git"

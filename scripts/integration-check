@@ -52,6 +52,7 @@ locked_dependency_commit()
     printf '%s\n' "$dependency_commit"
 }
 if ! expected_clinedi_commit=$(locked_dependency_commit clinedi) ||
+   ! expected_structlisp_commit=$(locked_dependency_commit structlisp) ||
    ! expected_cl_colorist_commit=$(locked_dependency_commit cl-colorist) ||
    ! expected_colorlisp_commit=$(locked_dependency_commit colorlisp) ||
    ! expected_colordiff_commit=$(locked_dependency_commit colordiff)
@@ -61,6 +62,7 @@ then
 fi
 if ! CCLSH_SAFE=1 \
      CCLSH_EXPECTED_CLINEDI_COMMIT="$expected_clinedi_commit" \
+     CCLSH_EXPECTED_STRUCTLISP_COMMIT="$expected_structlisp_commit" \
      CCLSH_EXPECTED_CL_COLORIST_COMMIT="$expected_cl_colorist_commit" \
      CCLSH_EXPECTED_COLORLISP_COMMIT="$expected_colorlisp_commit" \
      CCLSH_EXPECTED_COLORDIFF_COMMIT="$expected_colordiff_commit" \
@@ -70,6 +72,9 @@ if ! CCLSH_SAFE=1 \
            (string=
             cclsh:*cclsh-build-clinedi-commit*
             (cclsh:getenv "CCLSH_EXPECTED_CLINEDI_COMMIT"))
+           (string=
+            cclsh:*cclsh-build-structlisp-commit*
+            (cclsh:getenv "CCLSH_EXPECTED_STRUCTLISP_COMMIT"))
            (string=
             cclsh:*cclsh-build-cl-colorist-commit*
             (cclsh:getenv "CCLSH_EXPECTED_CL_COLORIST_COMMIT"))

@@ -153,10 +153,14 @@
      :environment       "CCLSH_COLORDIFF_SOURCE"
      :default-directory "../colordiff/"
      :asd               "colordiff.asd")
-    (:name              "clinedi"
-     :environment       "CCLSH_CLINEDI_SOURCE"
-     :default-directory "../clinedi/"
-     :asd               "clinedi.asd"))
+     (:name              "structlisp"
+      :environment       "CCLSH_STRUCTLISP_SOURCE"
+      :default-directory "../structlisp/"
+      :asd               "structlisp.asd")
+     (:name              "clinedi"
+      :environment       "CCLSH_CLINEDI_SOURCE"
+      :default-directory "../clinedi/"
+      :asd               "clinedi.asd"))
   "Locked source dependencies loaded into the saved image, in load order.")
 
 (defun build-lock-commit (name)
@@ -398,6 +402,8 @@
 (let* ((commit (build-git-commit))
        (clinedi-commit
          (getf (build-loaded-dependency-identity "clinedi") ':commit))
+       (structlisp-commit
+         (getf (build-loaded-dependency-identity "structlisp") ':commit))
        (cl-colorist-commit
          (getf (build-loaded-dependency-identity "cl-colorist") ':commit))
        (colorlisp-commit
@@ -412,6 +418,7 @@
            (build-quicklisp-template-files))))
   (setf cclsh:*cclsh-build-commit*             commit
         cclsh:*cclsh-build-clinedi-commit*     clinedi-commit
+        cclsh:*cclsh-build-structlisp-commit*  structlisp-commit
         cclsh:*cclsh-build-cl-colorist-commit* cl-colorist-commit
         cclsh:*cclsh-build-colorlisp-commit*   colorlisp-commit
         cclsh:*cclsh-build-colordiff-commit*   colordiff-commit
@@ -432,6 +439,8 @@
 (dolist (system '("cclsh"
                   "clinedi"
                   "clinedi/tests"
+                  "structlisp"
+                  "structlisp/tests"
                   "cl-colorist"
                   "cl-colorist/tests"
                   "quicklisp"))
