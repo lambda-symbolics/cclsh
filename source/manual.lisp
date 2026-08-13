@@ -444,13 +444,13 @@ and requires an absolute, owner-only XDG_RUNTIME_DIR. status succeeds only when
 a matching worker is ready. stop and restart terminate active accelerated
 sessions. Full source installation, fallback and process-context details:
 
-  https://github.com/luciusmagn/cclsh/blob/master/docs/installation.org")
+  https://github.com/lambda-symbolics/cclsh/blob/master/docs/installation.org")
 
     ("install" "user and shared system installations"
      "The recommended Linux x86-64 package is the Nix flake:
 
-  nix run github:luciusmagn/cclsh -- --version
-  nix profile install github:luciusmagn/cclsh
+  nix run github:lambda-symbolics/cclsh -- --version
+  nix profile install github:lambda-symbolics/cclsh
 
 From a checkout, use nix run . or nix profile install .#cclsh. The flake
 rebuilds CCL 1.13 from the exact downstream CCL commits and editor dependency

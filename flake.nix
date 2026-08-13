@@ -44,7 +44,7 @@
 
       clinediSource = pkgs.fetchgit {
         name = "clinedi-${builtins.substring 0 7 clinediRev}";
-        url = "https://github.com/luciusmagn/clinedi.git";
+        url = "https://github.com/lambda-symbolics/clinedi.git";
         rev = clinediRev;
         hash = "sha256-1H4dHkIw9/w5bg5ZDpYTePKBfONlc2eROgs1ynI80ao=";
         leaveDotGit = true;
@@ -52,7 +52,7 @@
 
       clColoristSource = pkgs.fetchgit {
         name = "cl-colorist-${builtins.substring 0 7 clColoristRev}";
-        url = "https://github.com/luciusmagn/cl-colorist.git";
+        url = "https://github.com/lambda-symbolics/cl-colorist.git";
         rev = clColoristRev;
         hash = "sha256-xo+U65B57TCQdJDsokdGtiG0jW5oJiq/cQW6rTlgXic=";
         leaveDotGit = true;
@@ -60,7 +60,7 @@
 
       colorlispSource = pkgs.fetchgit {
         name = "colorlisp-${builtins.substring 0 7 colorlispRev}";
-        url = "https://github.com/luciusmagn/colorlisp.git";
+        url = "https://github.com/lambda-symbolics/colorlisp.git";
         rev = colorlispRev;
         hash = "sha256-MtvbDJlQkpIG947+XWfTcmtP6Sq5PALPxMQaubkyz+E=";
         leaveDotGit = true;
@@ -68,7 +68,7 @@
 
       colordiffSource = pkgs.fetchgit {
         name = "colordiff-${builtins.substring 0 7 colordiffRev}";
-        url = "https://github.com/luciusmagn/colordiff.git";
+        url = "https://github.com/lambda-symbolics/colordiff.git";
         rev = colordiffRev;
         hash = "sha256-B3DsZb8WsRqKPn4Al8SiQ+HhBSJ95nZukmeB2nXU/eI=";
         leaveDotGit = true;
@@ -306,7 +306,7 @@
 
         meta = {
           description = "System shell running inside Clozure CL";
-          homepage = "https://github.com/luciusmagn/cclsh";
+          homepage = "https://github.com/lambda-symbolics/cclsh";
           license = lib.licenses.isc;
           mainProgram = "cclsh";
           platforms = [ "x86_64-linux" ];

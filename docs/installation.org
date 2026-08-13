@@ -14,19 +14,19 @@ login shell, and keep a working recovery shell available.
 Run cclsh without installing it:
 
 #+begin_src sh
-nix run github:luciusmagn/cclsh
+nix run github:lambda-symbolics/cclsh
 #+end_src
 
 To check the package without starting an interactive session:
 
 #+begin_src sh
-nix run github:luciusmagn/cclsh -- --version
+nix run github:lambda-symbolics/cclsh -- --version
 #+end_src
 
 ** Install for one user
 
 #+begin_src sh
-nix profile install github:luciusmagn/cclsh
+nix profile install github:lambda-symbolics/cclsh
 cclsh --version
 #+end_src
 
@@ -75,10 +75,10 @@ Clone Clinedi, cl-colorist, ColorLisp and Colordiff beside the cclsh checkout,
 then select their locked revisions:
 
 #+begin_src sh
-git clone https://github.com/luciusmagn/clinedi.git ../clinedi
-git clone https://github.com/luciusmagn/cl-colorist.git ../cl-colorist
-git clone https://github.com/luciusmagn/colorlisp.git ../colorlisp
-git clone https://github.com/luciusmagn/colordiff.git ../colordiff
+git clone https://github.com/lambda-symbolics/clinedi.git ../clinedi
+git clone https://github.com/lambda-symbolics/cl-colorist.git ../cl-colorist
+git clone https://github.com/lambda-symbolics/colorlisp.git ../colorlisp
+git clone https://github.com/lambda-symbolics/colordiff.git ../colordiff
 for dependency in clinedi cl-colorist colorlisp colordiff; do
     commit=$(sed -n "s/^$dependency=//p" dependencies.lock)
     git -C "../$dependency" checkout --detach "$commit"

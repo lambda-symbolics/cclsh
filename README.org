@@ -14,8 +14,8 @@ considering login-shell use.
 With Nix flakes enabled:
 
 #+begin_src sh
-nix run github:luciusmagn/cclsh -- --version
-nix run github:luciusmagn/cclsh
+nix run github:lambda-symbolics/cclsh -- --version
+nix run github:lambda-symbolics/cclsh
 #+end_src
 
 Then type these lines inside cclsh:
@@ -35,7 +35,7 @@ substitutes a Lisp result into a command.
 The Nix flake is the recommended package:
 
 #+begin_src sh
-nix profile install github:luciusmagn/cclsh
+nix profile install github:lambda-symbolics/cclsh
 cclsh --version
 #+end_src
 

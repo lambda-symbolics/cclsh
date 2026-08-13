@@ -38,7 +38,7 @@ Cosmetic regeneration of a local mirror is inappropriate because it changes
 the attested bytes without changing runtime behavior.
 
 Both mirrors originated in cclsh commit
-[[https://github.com/luciusmagn/cclsh/commit/6a9d211fa956cb6a1da5f68d40535f7773c129ff][=6a9d211fa956cb6a1da5f68d40535f7773c129ff=]], =Attest patched
+[[https://github.com/lambda-symbolics/cclsh/commit/6a9d211fa956cb6a1da5f68d40535f7773c129ff][=6a9d211fa956cb6a1da5f68d40535f7773c129ff=]], =Attest patched
 login builds=.
 
 * Structural validation record
