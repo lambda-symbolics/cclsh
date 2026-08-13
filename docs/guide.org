@@ -634,6 +634,11 @@ The package environment is synchronized before this function runs. The last
 command status is dynamically protected while it runs, so prompt helpers
 cannot accidentally replace it.
 
+Interactive terminal sessions emit OSC 133 semantic shell-integration markers
+for prompt start, input start, execution start and command completion. The
+completion marker includes the command's exit status. Set
+=*semantic-prompt-markers-enabled*= to =nil= in =startup.lisp= to disable them.
+
 Clinedi key bindings are configured through =*line-editor-keymap*=. Keymap
 events are the semantic names returned by Clinedi's decoder, such as =:left=,
 =:word-right=, =:kill-line= and =:complete=. Commands use the same stable names;

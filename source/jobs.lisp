@@ -722,6 +722,7 @@ pipeline job and inherits that stage's prepared standard descriptors.")
    making the exit-time stream flush signal on the broken pipe; the error
    handler then falls back to a hard exit instead of dropping the dying
    image into an endless break loop."
+  (terminal-finish-semantic-command status)
   (jobs--signal-exit)
   (quit status :error-handler (lambda (condition)
                                 (declare (ignore condition))

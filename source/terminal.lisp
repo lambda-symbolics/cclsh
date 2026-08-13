@@ -182,6 +182,37 @@ in the calling thread and restore the exact prior mask after FUNCTION."
   (and *presentation-enabled*
        (= 1 (external-call "isatty" :int 1 :int))))
 
+(defparameter *semantic-prompt-markers-enabled* t
+  "Emit OSC 133 prompt lifecycle markers on interactive terminal output.")
+
+(defvar *semantic-command-marker-active* nil
+  "True while an interactive command awaits its command-finished marker.")
+
+(defun terminal-semantic-marker (marker &optional (status 0))
+  "Return Clinedi's OSC 133 sequence for MARKER and STATUS."
+  (clinedi:semantic-prompt-marker-sequence marker status))
+
+
+(defun terminal-write-semantic-marker
+    (marker &optional (status 0) (stream *standard-output*)
+             (enabled-p (and *semantic-prompt-markers-enabled*
+                             (terminal-output-tty-p))))
+  "Write and flush one OSC 133 MARKER to STREAM when terminal output permits it."
+  (when enabled-p
+    (write-string (terminal-semantic-marker marker status) stream)
+    (force-output stream))
+  (values))
+
+(defun terminal-finish-semantic-command
+    (&optional (status 0) (stream *standard-output*)
+               (enabled-p (and *semantic-prompt-markers-enabled*
+                               (terminal-output-tty-p))))
+  "Emit the active command's OSC 133 completion marker exactly once."
+  (when *semantic-command-marker-active*
+    (terminal-write-semantic-marker ':command-finished status stream enabled-p)
+    (setf *semantic-command-marker-active* nil))
+  (values))
+
 (defun terminal--get-termios (pointer)
   "Fill POINTER with terminal attributes. Return success and errno."
   (loop

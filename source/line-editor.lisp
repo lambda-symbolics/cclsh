@@ -7,6 +7,7 @@
 Startup files may replace this with another CLINEDI:KEYMAP or change bindings
 with CLINEDI:KEYMAP-BIND. The default map is private to this CCLSH image.")
 
+
 (defun line-editor--accept-completion (candidate)
   "Return the accepted form of CANDIDATE for insertion into shell input.
    Directory candidates stay open for further path completion. Other unique
@@ -16,7 +17,7 @@ with CLINEDI:KEYMAP-BIND. The default map is private to this CCLSH image.")
       candidate
       (concatenate 'string candidate " ")))
 
-(defun edit-line (prompt &key (history *history*))
+(defun edit-line (prompt &key (history *history*) semantic-prompt-p)
   "Edit one shell input line under PROMPT.
    Return the line and a result kind of :LINE, :ABORT or :EOF."
   (clinedi:edit-line
@@ -32,4 +33,12 @@ with CLINEDI:KEYMAP-BIND. The default map is private to this CCLSH image.")
    :completion-accept-function #'line-editor--accept-completion
    :completion-arrangement :grid
    :suggestion-function #'history-suggestion
+   :before-prompt-function
+   (and semantic-prompt-p
+        (lambda (stream)
+          (terminal-write-semantic-marker ':prompt-start 0 stream)))
+   :after-prompt-function
+   (and semantic-prompt-p
+        (lambda (stream)
+          (terminal-write-semantic-marker ':input-start 0 stream)))
    :keymap *line-editor-keymap*))

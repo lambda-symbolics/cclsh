@@ -9,7 +9,7 @@
 
 (in-package #:cclsh)
 
-(defparameter *cclsh-version* "1.3.0"
+(defparameter *cclsh-version* "1.4.0"
   "The cclsh version reported by --version.")
 
 (defvar *cclsh-build-commit* nil
@@ -117,7 +117,7 @@
     (terminal-fresh-line)
     (let ((prompt (prompt-render *last-status* duration-milliseconds columns)))
       (multiple-value-bind (line kind)
-          (edit-line prompt)
+          (edit-line prompt :semantic-prompt-p t)
         (if (not (eq kind ':line))
             (values line kind)
             (let ((accumulated line))
@@ -183,11 +183,14 @@
           (handler-case
               (let ((*break-hook* (lambda (&rest arguments)
                                     (declare (ignore arguments))
+                                    (setf *last-status* 1)
+                                    (terminal-finish-semantic-command 1)
                                     (throw 'cclsh-toplevel nil))))
                 (multiple-value-bind (line kind)
                     (if interactive
                         (progn
                           (jobs-notify)
+                          (terminal-finish-semantic-command *last-status*)
                           (shell-read-interactive duration))
                         (shell-read-plain))
                   (ecase kind
@@ -202,15 +205,22 @@
                     (:line
                      (when interactive
                        (history-append line))
-                     (let ((started (get-internal-real-time)))
-                       (dispatch-line line)
-                       (setf duration
-                             (round (* 1000 (- (get-internal-real-time)
-                                               started))
-                                    internal-time-units-per-second))))))
-                (setf failures 0))
+                     (let ((executable-p (dispatch-line-executable-p line)))
+                       (when (and interactive executable-p)
+                         (terminal-write-semantic-marker ':execution-start)
+                         (setf *semantic-command-marker-active* t))
+                       (let ((started (get-internal-real-time)))
+                         (dispatch-line line)
+                         (setf duration
+                               (round (* 1000 (- (get-internal-real-time)
+                                                 started))
+                                      internal-time-units-per-second)))
+                       (when (and interactive executable-p)
+                         (terminal-finish-semantic-command *last-status*)))))
+                (setf failures 0)))
             (serious-condition (condition)
               (terminal-restore)
+              (terminal-finish-semantic-command 1)
               (dispatch-report-error condition)
               (incf failures)
               (when (>= failures 25)

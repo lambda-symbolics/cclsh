@@ -148,6 +148,13 @@ Reject a background change like any other builtin command."
       (dispatch-report-error condition)
       1)))
 
+(defun dispatch-line-executable-p (line)
+  "True when LINE denotes a command or Lisp form rather than ignored input."
+  (let ((trimmed (string-trim *whitespace-characters* line)))
+    (and (plusp (length trimmed))
+         (not (line-comment-p trimmed))
+         (not (and (>= (length trimmed) 2)
+                   (string= "#!" trimmed :end2 2))))))
 (defun dispatch-line (line)
   "Execute LINE and return its exit status, recording *LAST-STATUS*.
    Blank and top-level comment lines leave the stopped jobs exit warning

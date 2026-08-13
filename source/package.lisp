@@ -42,6 +42,7 @@
            #:*directory-change-hooks*
            #:*prompt-function*
            #:*line-editor-keymap*
+           #:*semantic-prompt-markers-enabled*
            #:prompt-default
            #:command
            #:command-name

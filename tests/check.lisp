@@ -70,6 +70,51 @@
                (uiop:run-program (list "stat" "-c" "%a" path)
                                  :output ':string)))
 
+(let* ((escape (code-char 27))
+       (prompt-start (format nil "~c]133;A~c\\" escape escape))
+       (input-start (format nil "~c]133;B~c\\" escape escape))
+       (execution-start (format nil "~c]133;C~c\\" escape escape))
+       (finished-23 (format nil "~c]133;D;23~c\\" escape escape)))
+  (check-equal "semantic prompt-start marker is emitted"
+               prompt-start
+               (cclsh::terminal-semantic-marker ':prompt-start))
+  (check-equal "semantic input-start marker is emitted"
+               input-start
+               (cclsh::terminal-semantic-marker ':input-start))
+  (check-equal "semantic execution marker is emitted"
+               execution-start
+               (with-output-to-string (stream)
+                 (cclsh::terminal-write-semantic-marker
+                  ':execution-start 0 stream t)))
+  (let ((cclsh::*semantic-command-marker-active* t))
+    (check-equal "semantic completion marker includes exit status"
+                 finished-23
+                 (with-output-to-string (stream)
+                   (cclsh::terminal-finish-semantic-command
+                    23 stream t)))
+    (check-equal "semantic completion marker is emitted once"
+                 nil
+                 cclsh::*semantic-command-marker-active*)))
+
+(check-equal "empty input is not executable"
+             nil
+             (cclsh::dispatch-line-executable-p ""))
+(check-equal "whitespace input is not executable"
+             nil
+             (cclsh::dispatch-line-executable-p (format nil " ~c " #\tab)))
+(check-equal "comment input is not executable"
+             nil
+             (cclsh::dispatch-line-executable-p "; comment"))
+(check-equal "shebang input is not executable"
+             nil
+             (cclsh::dispatch-line-executable-p "#!/usr/bin/env cclsh"))
+(check-equal "command input is executable"
+             t
+             (cclsh::dispatch-line-executable-p "echo hello"))
+(check-equal "Lisp input is executable"
+             t
+             (cclsh::dispatch-line-executable-p "(+ 1 2)"))
+
 (defvar *check-stage-arguments* nil
   "Last argument vector received by CHECK-STAGE-ARGUMENTS.")
 

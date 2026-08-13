@@ -309,6 +309,10 @@ arguments. A string is used verbatim; NIL selects prompt-default. Errors and
 other values are reported and safely fall back. Use &allow-other-keys in custom
 functions so future context additions remain compatible.
 
+Interactive terminals receive OSC 133 semantic prompt markers for prompt start,
+input start, execution start and command completion with the exit status. Set
+*semantic-prompt-markers-enabled* to NIL in startup.lisp to disable them.
+
   Left/Right C-b/C-f   move/accept   Ctrl-arrows move by word
   Up/Down C-p/C-n      history match C-w/C-h     kill word
   Home/End C-a/C-e     line ends     C-k/C-u     kill rest/line

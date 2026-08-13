@@ -47,7 +47,7 @@
         name = "clinedi-${builtins.substring 0 7 clinediRev}";
         url = "https://github.com/lambda-symbolics/clinedi.git";
         rev = clinediRev;
-        hash = "sha256-c+v7GO8qF7E11b2YlYYGzoWI1NUUcjo5TZtXWWBFeU0=";
+        hash = "sha256-fHXs6jbP8pUAVFd6tczM22GD++3/jXmf/70YDYzWqL0=";
         leaveDotGit = true;
       };
 
@@ -214,7 +214,7 @@
 
       cclsh = pkgs.stdenv.mkDerivation {
         pname = "cclsh";
-        version = "1.3.0";
+        version = "1.4.0";
         src = self;
 
         nativeBuildInputs = [
@@ -353,7 +353,7 @@
           chmod 700 "$XDG_RUNTIME_DIR"
 
           ${lib.getExe cclsh} --version >version
-          grep -F "cclsh 1.3.0" version
+          grep -F "cclsh 1.4.0" version
           grep -F "clinedi ${clinediRev}" version
           grep -F "cl-colorist ${clColoristRev}" version
           ${lib.getExe cclsh} -c 'exit 0'
