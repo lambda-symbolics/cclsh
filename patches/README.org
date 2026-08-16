@@ -19,10 +19,9 @@ c994217adc56b3f8a564526cee4695893ac84d86
 
 The two downstream commits form a linear branch named =cclsh-v1.13=:
 
-| Role | Commit |
-|------+--------|
-| CCL v1.13 base | =c994217adc56b3f8a564526cee4695893ac84d86= |
-| Linux xstate backport | =a293f4460fadc5da420eec0739e61622e847aed2= |
+| Role                                       | Commit                                   |
+|--------------------------------------------+------------------------------------------|
+| CCL v1.13 base                             | =c994217adc56b3f8a564526cee4695893ac84d86= |
 | cclsh argument boundary and final revision | =579c87300ee632af99182276f2ad40e1c38c5d0a= |
 
 Manual builds clone the fork and detach at the final revision. Nix builds
@@ -40,108 +39,6 @@ the attested bytes without changing runtime behavior.
 Both mirrors originated in cclsh commit
 [[https://github.com/lambda-symbolics/cclsh/commit/6a9d211fa956cb6a1da5f68d40535f7773c129ff][=6a9d211fa956cb6a1da5f68d40535f7773c129ff=]], =Attest patched
 login builds=.
-
-* Structural validation record
-
-The following relationships and hashes were reproduced on 2026-07-14:
-
-#+begin_src sh
-git -C ../ccl rev-parse a293f4460fadc5da420eec0739e61622e847aed2^
-# c994217adc56b3f8a564526cee4695893ac84d86
-
-git -C ../ccl rev-parse 579c87300ee632af99182276f2ad40e1c38c5d0a^
-# a293f4460fadc5da420eec0739e61622e847aed2
-
-git -C ../ccl rev-parse 1c6f0cca158098546d762aeaa646822650b53cf7^
-# 0258e0955269ef936414d601034966648f5f470e
-
-sha256sum patches/ccl-linux-xstate.patch patches/ccl-cclsh-argv.patch
-# 5d0be12d0436aa057f14cdfe23eb8e843aa6940d967d99de70c16c9a288a06fe  patches/ccl-linux-xstate.patch
-# 976e43a03cf2e25b9100d4f181da75f8fdfb8603be6f078b0cf65d3e6880f877  patches/ccl-cclsh-argv.patch
-
-git -C ../ccl apply --reverse --check \
-  "$(pwd)/patches/ccl-linux-xstate.patch"
-git -C ../ccl apply --reverse --check \
-  "$(pwd)/patches/ccl-cclsh-argv.patch"
-#+end_src
-
-At final fork revision =579c87300ee632af99182276f2ad40e1c38c5d0a=,
-=git apply --reverse --check= accepts each local mirror. This records that the
-attested downstream changes are present without requiring the fork's commit
-serialization and the local attestation files to have identical bytes.
-
-The complete release validation sequence is:
-
-#+begin_src sh
-git clone git@github.com:luciusmagn/ccl.git ../ccl
-git -C ../ccl checkout --detach 579c87300ee632af99182276f2ad40e1c38c5d0a
-make ccl-kernel CCL_SOURCE=../ccl
-
-# After placing the matching v1.13 bootstrap image beside ../ccl/lx86cl64:
-../ccl/lx86cl64 --batch --quiet -n \
-  -e '(ccl:rebuild-ccl :clean t)' </dev/null
-../ccl/lx86cl64 --batch -n </dev/null
-
-git clone https://github.com/Clozure/ccl-tests.git ../ccl-tests
-make -C ../ccl-tests CCL=../ccl/lx86cl64
-
-scripts/check
-CCLSH_QUICKLISP_SETUP=/home/USER/quicklisp/setup.lisp \
-  make login-build CCL_SOURCE=../ccl CCL=../ccl/lx86cl64 \
-    CCL_IMAGE=/usr/lib/ccl/lx86cl64.image
-make integration-check CCL=../ccl/lx86cl64 \
-  CCL_IMAGE=/usr/lib/ccl/lx86cl64.image
-nix flake check
-#+end_src
-
-The bootstrap image path is distribution-specific. It must match CCL 1.13.
-The upstream rebuild and =ccl-tests= steps mirror the Linux pull-request
-workflow in Clozure CL. The cclsh steps cover the saved image, command boundary,
-script arguments, installation and attestation behavior.
-
-* =ccl-linux-xstate.patch=
-
-** Identity and provenance
-
-- Local SHA-256:
-  =5d0be12d0436aa057f14cdfe23eb8e843aa6940d967d99de70c16c9a288a06fe=
-- Downstream backport:
-  [[https://github.com/luciusmagn/ccl/commit/a293f4460fadc5da420eec0739e61622e847aed2][=a293f4460fadc5da420eec0739e61622e847aed2=]]
-- Downstream base:
-  [[https://github.com/Clozure/ccl/commit/c994217adc56b3f8a564526cee4695893ac84d86][=c994217adc56b3f8a564526cee4695893ac84d86=]]
-- Prepared upstream topic branch:
-  [[https://github.com/luciusmagn/ccl/tree/lho/fix/linux-x86-64-xstate][=lho/fix/linux-x86-64-xstate=]]
-- Prepared upstream commit:
-  [[https://github.com/luciusmagn/ccl/commit/1c6f0cca158098546d762aeaa646822650b53cf7][=1c6f0cca158098546d762aeaa646822650b53cf7=]]
-- Prepared upstream base:
-  [[https://github.com/Clozure/ccl/commit/0258e0955269ef936414d601034966648f5f470e][=0258e0955269ef936414d601034966648f5f470e=]]
-- Related upstream issue:
-  [[https://github.com/Clozure/ccl/issues/85][Clozure CL issue 85]]
-- Historical diagnosis:
-  [[https://github.com/Clozure/ccl/commit/b1a59e443344f6f79d1069e1902de5d04c14e2e3][=b1a59e443344f6f79d1069e1902de5d04c14e2e3=]]
-- Historical backout:
-  [[https://github.com/Clozure/ccl/commit/99bf1533041076ab1f8f432426ec20d015e70ba6][=99bf1533041076ab1f8f432426ec20d015e70ba6=]]
-
-The patch validates the Linux x86-64 extended floating-point state metadata,
-copies a complete aligned xstate frame when CCL enables AVX-state copying, and
-falls back to the ordinary floating-point frame when validation fails. It is a
-modern, bounded implementation informed by the earlier upstream diagnosis,
-not a verbatim restoration of the historical change.
-
-** Upstream and retirement status
-
-- Classification: upstream candidate
-- Topic branch: prepared and pushed
-- Pull request: none submitted
-- Upstream merge commit: none
-- First upstream release containing the fix: none
-- Focused regression requirement: demonstrate that extended AVX state survives
-  the relevant Linux signal path and that malformed size metadata takes the
-  bounded fallback
-- CCLSH retirement commit: none
-- Retirement condition: an upstream release used by cclsh contains the
-  accepted fix, the focused regression passes there, and the local mirror,
-  immutable Nix diff and attestation entry are removed in one CCLSH change
 
 * =ccl-cclsh-argv.patch=
 
@@ -167,17 +64,3 @@ The focused downstream checks are =scripts/verify-argument-boundary=,
 =tests/integration.lisp=. They are included in the release validation sequence
 above.
 
-** Upstream and retirement status
-
-- Classification: downstream-only as written
-- Upstream topic branch: none
-- Pull request: none submitted
-- Upstream merge commit: none
-- First upstream release containing an equivalent facility: none
-- Upstream design requirement: replace the cclsh basename special case with a
-  generic, documented application argument boundary acceptable to CCL
-  maintainers
-- CCLSH retirement commit: none
-- Retirement condition: stock CCL exposes an equivalent generic boundary,
-  cclsh adopts it, all argument and installed-image checks pass, and the local
-  mirror, immutable Nix diff and attestation entry are removed together

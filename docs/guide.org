@@ -639,7 +639,3 @@ begins with a dash.
 The process exit code is the shell's last status, or the argument of
 =exit=.
 
-* Login-shell use
-
-See [[file:installation.org][Installing cclsh]] for login-shell
-installation, validation and recovery.

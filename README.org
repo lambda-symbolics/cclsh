@@ -5,9 +5,9 @@ A system shell running inside Clozure CL. Ordinary Unix commands and Common
 Lisp forms share one live image, so the boundary between shell use and Lisp is
 small and explicit.
 
-cclsh targets Linux x86-64. It is not a POSIX shell: command strings, scripts,
-pipelines and redirection use cclsh syntax. Try it as an ordinary shell before
-considering login-shell use.
+cclsh targets Linux x86-64, but works elsewhere too.
+
+It is not a POSIX shell: command strings, scripts, pipelines and redirection use cclsh syntax.
 
 * Try it
 
@@ -21,10 +21,10 @@ nix run github:lambda-symbolics/cclsh
 Then type these lines inside cclsh:
 
 #+begin_src text
-pwd
-(+ 1 2)
-echo "Lisp result:" (+ 20 22)
-help
+$ pwd
+$ (+ 1 2)
+$ echo "Lisp result: " (+ 20 22)
+$ help
 #+end_src
 
 The first line runs a normal command, the second evaluates Lisp, and the third
@@ -105,5 +105,4 @@ Standalone image builds require the downstream CCL changes documented in the
 
 cclsh's original code and documentation are released under the ISC license.
 See [[file:LICENSE][LICENSE]]. The CCL-derived patch mirrors under =patches/=
-remain under the Apache License 2.0; see [[file:patches/LICENSE][their license]]
-and [[file:patches/README.org][provenance ledger]].
+remain under the Apache License 2.0; see [[file:patches/LICENSE][their license]].

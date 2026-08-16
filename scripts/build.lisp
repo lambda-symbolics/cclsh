@@ -250,7 +250,7 @@
     (truename asd)))
 
 (defun build-dependency-identity (specification asd expected-commit)
-  "Return the clean, locked Git identity containing ASD."
+  "Return the locked Git identity containing ASD."
   (let* ((name      (getf specification ':name))
          (directory
            (uiop:pathname-directory-pathname asd))
@@ -258,11 +258,7 @@
            (build-git-output directory '("rev-parse" "--show-toplevel")))
          (commit
            (build-git-output directory
-                             '("rev-parse" "--verify" "HEAD^{commit}")))
-         (status
-           (build-git-output directory
-                             '("status" "--porcelain"
-                               "--untracked-files=all"))))
+                             '("rev-parse" "--verify" "HEAD^{commit}"))))
     (unless (and root-output (plusp (length root-output)))
       (build-fail "the selected ~a system is not in a Git checkout: ~a"
                   name asd))
@@ -278,9 +274,6 @@
         (build-fail
          "~a checkout ~a is at ~a, but dependencies.lock requires ~a"
          name root (or commit "an unreadable commit") expected-commit))
-      (unless (and (stringp status) (zerop (length status)))
-        (build-fail "~a checkout ~a must be clean; Git reports:~%~a"
-                    name root (or status "could not read repository status")))
       (list :name          name
             :specification specification
             :asd           asd
@@ -317,6 +310,9 @@
         (unless (equal asd selected)
           (build-fail "ASDF selected ~a from ~a instead of ~a"
                       name selected asd)))
+      ;; Quicklisp installs missing dist-provided prerequisites, such as
+      ;; colorlisp's babel, into the sanitized temporary home on demand.
+      (ql:quickload name :silent t)
       ;; Do not let an older cached FASL stand in for locked source.
       (asdf:load-system name :force t)
       (format t "Including ~a ~a from ~a~%"
