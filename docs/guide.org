@@ -1,101 +1,81 @@
 #+TITLE: cclsh guide
 #+AUTHOR: Lukáš Hozda
 
-cclsh is a system shell running inside a live Clozure CL image. Every
-line you type is either a Unix command or a Lisp form, and the boundary
-between the two is deliberately thin: shell commands are resolvable
-Lisp objects, and Lisp code can orchestrate processes with pipeline
-helpers.
+cclsh is a system shell in a live Clozure CL image. Unix commands and
+Common Lisp share one process. Pipelines and redirection are Lisp forms.
 
-cclsh is not a POSIX shell. Its command strings and scripts do not implement
-sh operator syntax such as =|=, =>= and =<=. Lisp pipeline and redirection
-stages use cclsh's own syntax. Dogfood it as an ordinary shell before
-considering login-shell use.
+The built-in manual is available as =help= inside cclsh, or as =cclsh help=
+from another shell. =help SECTION= opens a topic.
 
 * Installation
 
-See [[file:installation.org][Installing cclsh]] for Nix, source-build and
-shared login-shell instructions.
+See [[file:installation.org][Installing cclsh]] for Nix, source builds and
+login-shell setup.
 
 * How a line is interpreted
 
-When you press Enter, cclsh looks at the line:
+On Enter, cclsh classifies the line:
 
-1. If it starts with =(= (ignoring whitespace), it is read and
-   evaluated as Lisp in the =cclsh-user= package. Values print one per
-   line, REPL style.
+1. A line starting with =(= (after whitespace) is read and evaluated as
+   Lisp in =cclsh-user=. Values print one per line.
 2. Otherwise it is a command line. The first word resolves in order:
-   - an existing non-directory word containing =/= runs as a file path
-     directly,
-   - a symbol in the current package whose value is a =command=
-     instance runs as a builtin,
-   - otherwise the word is looked up in =PATH=.
-3. When command resolution misses and the expanded line is one explicit
-   directory path, cclsh changes into it as if =cd= had been used. =..=,
-   absolute paths, paths beginning =./= or =../=, expanded =~/...= paths and
-   names ending in =/= qualify. A bare directory name does not, and an
-   implicit directory change cannot take arguments or be backgrounded.
-   Builtins and executables win before this check. Command-position Tab
-   completion adds the trailing slash for you.
-4. When nothing matches and the line is a single word that names a
-   bound variable or keyword, or is a number literal, it evaluates
-   REPL style instead: after =(defvar *balls* 'hi)=, typing =*balls*=
-   prints =HI=. Real commands always win; the fallback only runs once
-   builtin and =PATH= resolution both miss, and it reads the raw word,
-   so glob characters in earmuffed names cannot mangle it. The
-   highlighter shows such words magenta.
-5. Otherwise a red =command not found= and status 127.
+   - an existing non-directory word containing =/= runs as a path
+   - a symbol in the current package bound to a =command= instance runs
+     as a builtin
+   - otherwise the word is looked up in =PATH=
+3. If that misses and the expanded line is one explicit directory path,
+   cclsh changes into it. Implicit cd accepts:
+   - =..=
+   - absolute paths
+   - paths beginning =./= or =../=
+   - expanded =~/...= paths
+   - names ending in =/=
+   The path is the only word. Builtins and executables win first.
+   Command-position Tab completion adds the trailing slash.
+4. If that misses and the line is a single word naming a bound variable
+   or keyword, or a number literal, it evaluates REPL-style. After
+   =(defvar *balls* 'hi)=, =*balls*= prints =HI=. The highlighter shows
+   such words magenta.
+5. Otherwise: red =command not found=, status 127.
 
-Because only symbols bound to =command= instances count, ordinary Lisp
-bindings never shadow programs: typing =time= runs =/bin/time=, not the
-CL macro.
+Only symbols bound to =command= instances are builtins. =time= runs
+=/bin/time=.
 
-PATH lookups are cached for highlighting speed, but execution never
-trusts a cached miss: a freshly installed program runs immediately
-even while the highlighter still shows it red, and the first
-successful run updates the caches (=rehash= drops them wholesale).
+PATH lookups are cached for highlighting. Execution retries a cached
+miss, so a freshly installed program runs immediately. =rehash= drops
+the caches.
 
 * Command mode
 
-Words are split on whitespace with shell-like quoting and expansion:
+Words split on whitespace with quoting and expansion:
 
-| Syntax        | Meaning                                                 |
-|---------------+---------------------------------------------------------|
-| =~=, =~/x=    | home directory (only at the start of a bare word)       |
-| =$VAR=        | environment variable, empty when unset                  |
-| =${VAR}=      | same, with explicit braces                              |
-| =*=, =?=      | glob against the filesystem, per path segment           |
-| ="..."=       | one word, =$VAR= still expands inside                   |
-| ='...'=       | one word, everything literal                            |
-| =(form)=      | Lisp substitution, =$(form)= works too                  |
-| =\x=          | escape: =\ = joins words, =\*= is a literal star        |
+| Syntax     | Meaning                                      |
+|------------+----------------------------------------------|
+| =~=, =~/x=     | home directory, at the start of a bare word  |
+| =$VAR=       | environment variable, empty when unset       |
+| =${VAR}=     | same, with explicit braces                   |
+| =*=, =?=       | glob against the filesystem, per path segment |
+| ="..."=      | one word, =$VAR= expands inside                |
+| ='...'=      | one word, everything literal                 |
+| =(form)=     | Lisp substitution; =$(form)= is the same       |
+| =\x=         | escape: =\ = joins words, =\*= is a literal star |
 
-Details worth knowing:
-
-- Adjacent pieces concatenate into one argument: =pre"mid dle"post= is
-  the single word =premid dlepost=.
-- Hidden files only match globs that spell out the dot: =*= skips
-  =.hidden=, =.h*= finds it.
-- A glob with no matches passes through unchanged, so =echo *.zip= in
-  a zipless directory prints =*.zip=.
-- Globs apply only to whole bare words, not to quoted concatenations.
-- A semicolon that is the first non-whitespace character makes the whole
-  submitted line a comment. It is ignored without changing the previous
-  status, including in scripts and piped input. Elsewhere semicolons stay
-  literal, so =echo hello ; note= passes =;= and =note= to =echo=. Inside
-  Lisp forms and substitutions, semicolons keep their ordinary Common Lisp
-  meaning. Interactive comment entries remain available in history.
-- =#= never starts a command comment. =echo hello # note= passes both =#=
-  and =note= to =echo=. Lisp forms use ordinary Lisp comments.
-- There is no =|=, =>= or =<= syntax. A =|= in command mode is passed
-  to the program as a literal argument. Pipelines are Lisp forms, see
-  below.
+- Adjacent pieces concatenate into one argument: =pre"mid dle"post=
+  is =premid dlepost=.
+- Dotfiles match globs that include the dot: =.h*= finds =.hidden=.
+- An unmatched glob stays literal: =echo *.zip= prints =*.zip=.
+- Globs apply to whole bare words.
+- A leading =;= comments out the submitted line. The previous status is
+  kept. Elsewhere, =;= is a literal argument. Inside Lisp forms,
+  semicolons are Common Lisp comments. Comment lines go into history.
+- =#= is a literal argument.
+- Pipelines and redirection are Lisp forms. See [[*Pipelines]].
 
 ** Lisp substitution
 
-Parens inside a command line evaluate as Lisp and substitute their
-value. The outer parens are shell delimiters: a single form inside is
-an expression, several forms become one function call.
+Parentheses inside a command line evaluate as Lisp and substitute the
+value. The outer parens are shell delimiters: one form inside is an
+expression, several forms become one function call.
 
 #+begin_src sh
 echo (*balls*)
@@ -104,48 +84,38 @@ echo (string-downcase *balls*)
 mv draft.txt (format nil "post-~a.txt" (get-universal-time))
 #+end_src
 
-Rules:
-
-- =$(form)= is an alternative spelling of the same thing.
-- A standalone substitution returning a proper list splices into
-  several arguments, and NIL vanishes entirely, like an unset =$VAR=.
-- Inside a larger word the value concatenates: =x(+ 1 2)y= is =x3y=,
-  and NIL contributes an empty string.
-- Substitution results are used verbatim: no globbing or further
-  expansion applies to them.
-- Quote parens to keep them literal: ='(1 2 3)'= stays text. Unquoted
-  parens in filenames now need quoting or escaping.
-- An unterminated substitution continues on the next line, and Tab
-  completes Lisp symbols inside the parens.
+- =$(form)= is an alternative spelling.
+- A standalone substitution returning a proper list splices into several
+  arguments. =NIL= vanishes, like an unset =$VAR=.
+- Inside a larger word the value concatenates: =x(+ 1 2)y= is =x3y=.
+  =NIL= contributes an empty string.
+- Substitution results are used verbatim.
+- Quote parens to keep them literal: ='(1 2 3)'= stays text.
+- An unterminated substitution continues on the next line. Tab completes
+  Lisp symbols inside the parens.
 
 * Lisp mode
 
 #+begin_src lisp
 (+ 1 2)                     ; prints 3
 (defvar my-projects "~/common-lisp")
-(ccl:getenv "HOME")         ; full CCL is at your fingertips
+(ccl:getenv "HOME")
 #+end_src
 
-- =*=, =**= and =***= hold the last three primary values, as in a REPL.
-- =cclsh:*last-status*= holds the exit status of the last command.
-- Unfinished input continues on the next line under a =...= prompt:
-  unbalanced Lisp forms, open strings in either mode, and a command
-  line ending in a backslash (sh style, the backslash joins the lines
-  directly). History recalls multi-line entries with their original
-  newlines intact.
-- Calling an undefined function is reported up front with close
-  suggestions: =(defparam *x* 1)= says =undefined function defparam,
-  did you mean defparameter?= and does not evaluate the arguments of a
-  call that cannot succeed.
-- Errors print in red and return you to the prompt. You are never
-  dropped into the CCL debugger.
-- The evaluation package is =cclsh-user=, which uses =cl=, =ccl= and
-  =cclsh=.
+- Evaluation is in =cclsh-user=, which uses =cl=, =ccl= and =cclsh=.
+- =*=, =**= and =***= hold the last three primary values.
+- =cclsh:*last-status*= holds the last command's exit status.
+- Unfinished input continues under a =...= prompt: unbalanced Lisp
+  forms, open strings, and a command line ending in a backslash.
+  History recalls multi-line entries with their original newlines.
+- An undefined function is reported with close suggestions:
+  =(defparam *x* 1)= says =undefined function defparam, did you mean
+  defparameter?=. The call is rejected before its arguments run.
+- Errors print in red and return you to the prompt.
 
-When a form's output does not end in a newline, cclsh prints a reverse
-video =⏎= marker before the value, the same way fish marks partial
-lines: =(format t "hello")= shows =hello⏎= and then =NIL= on a fresh
-line. The prompt applies the same rule after commands like
+When a form's output omits a trailing newline, cclsh prints a reverse
+video =⏎= marker before the value: =(format t "hello")= shows =hello⏎=
+and then =NIL=. The prompt applies the same rule after commands like
 =printf hi=.
 
 * Environment variables
@@ -159,7 +129,7 @@ unset PAGER
 #+end_src
 
 From Lisp, names are designators: symbols, keywords and strings all
-work, and non-string values are stringified:
+work. Non-string values are stringified:
 
 #+begin_src lisp
 (setenv 'editor "vim")        ; reader upcases: sets EDITOR
@@ -170,49 +140,147 @@ work, and non-string values are stringified:
 (environment-variables)       ; live list of NAME=value strings
 #+end_src
 
-Lowercase variable names like =http_proxy= need strings. Note that =~=
-does not expand after === in command mode, use =$HOME= in values
-instead. In =cclsh-user=, =export= designates the shell command; use
-=cl:export= for the package operator.
+- Lowercase names like =http_proxy= need strings.
+- In command mode, =~= expands only at the start of a bare word. Use
+  =$HOME= in assignment values.
+- In =cclsh-user=, =export= is the shell command. Use =cl:export= for
+  the package operator.
+- =CCLSH_PACKAGE= holds the current Lisp package name. cclsh refreshes
+  it before each prompt and in each command environment.
 
-cclsh maintains =CCLSH_PACKAGE= as the canonical name of the current
-Lisp package. It refreshes the value before invoking the configured prompt
-renderer and in each command environment launched through cclsh, including
-after =(in-package ...)=. The built-in prompt displays the package directly.
-Direct calls to CCL's lower-level =run-program= made elsewhere bypass the
-refresh performed by cclsh's command and prompt boundaries.
+* Pipelines
 
-* Editing recorded definitions
-
-=edit= opens a function's recorded source in a temporary UTF-8 Lisp file. It
-uses =VISUAL= first, then =EDITOR=, and falls back to =vi=. Editor values may
-include arguments, such as =emacsclient --wait=.
-
-#+begin_src text
-edit my-function
-edit cl:mapcar
-#+end_src
-
-From Lisp, a function object or symbol can be supplied directly:
+Process orchestration is Lisp. Stage heads resolve like the first word
+of a command line. Stage arguments are evaluated expressions: a scalar
+becomes one stringified argument, =NIL= vanishes, and a
+proper list splices one level.
 
 #+begin_src lisp
-(edit #'my-function)
-(edit 'my-function)
+(cmd git "status")
+(pipe (ls "-la") (grep "lisp"))
+(pipe (ls "-1" (glob "screenshot-*"))
+      (wc "-l"))
+(seq (make "clean") (make))
+(all (make) (make "install"))
+(any (probe) (echo "fallback"))
+
+(let ((pattern "defun"))
+  (pipe (git "grep" pattern) (wc "-l")))
 #+end_src
 
-After the editor exits successfully, cclsh displays the before-and-after text
-with Colordiff and Lisp syntax highlighting, evaluates the edited top-level
-form in the function's package, and installs the new definition in the running
-image. The original source file is not changed. The edited text is retained as
-the function's current interactive source so =edit= can be used again. CCL's
-native source-note database provides the definition, so this does not require
-SB-INTROSPECT. Definitions compiled without retained source information cannot
-be edited this way.
+- =glob= applies the same =~=, environment-variable, =*= and =?=
+  expansion as a bare command word and returns a proper list. Matches
+  are sorted within each pattern; pattern order is kept. An unmatched
+  pattern stays literal. Ordinary strings are literal: ="-l"= is a
+  flag, =-l= is a Lisp variable.
+- =cmd= is the single-command sibling of a pipe stage. The head
+  resolves like a command word; the arguments are evaluated Lisp
+  expressions. The exit status comes back.
+- =run= is the function counterpart when the program name is computed.
+  It uses ordinary function-call semantics. Spread a computed list
+  with =apply=:
 
-* Defining your own commands
+#+begin_src lisp
+(apply #'run "ls" "-1" (glob "screenshot-*"))
+#+end_src
 
-=defcommand= creates a command callable both from the command line and
-from Lisp as an ordinary function:
+Redirection is spelled as stages inside =pipe= and =capture=:
+
+- =(from "file")= first, feeds standard input
+- =(to "file")= or =(append-to "file")= last, writes standard output
+- =(error-to "file")= or =(error-append-to "file")= sends every stage's
+  standard error to a file
+- =(merge-error)= sends standard error onto standard output
+
+=capture= returns the output as a string with trailing newlines
+trimmed.
+
+#+begin_src lisp
+(pipe (make) (to "build.log"))
+(pipe (make "install") (append-to "build.log"))
+(pipe (from "access.log") (grep "500") (wc "-l"))
+(pipe (from "a.bin") (to "b.bin"))
+(pipe (make) (error-to "errors.log"))
+(pipe (make) (to "all.log") (merge-error))
+(capture (make) (merge-error))
+(capture (git "rev-parse" "HEAD"))
+(defvar *head* (capture (git "rev-parse" "--short" "HEAD")))
+#+end_src
+
+From the command line:
+
+#+begin_src sh
+echo deployed (capture (git "rev-parse" "--short" "HEAD"))
+#+end_src
+
+File redirection is byte-transparent. =capture= decodes UTF-8. Error
+redirection covers builtin stages' =*error-output*= too.
+
+Each form returns the deciding exit status and records it in
+=*last-status*=. Builtin commands can appear inside =pipe=; they run
+concurrently and stream to the next stage. A synchronous =run= inside
+such a builtin joins the pipeline.
+
+* Unicode
+
+cclsh uses UTF-8 for terminal I/O, startup and history files, scripts,
+prompt output, environment names and values, child arguments, executable
+paths, and captured pipeline text.
+
+The editor measures terminal cells. Wide CJK and emoji glyphs wrap
+correctly. Combining marks and joined emoji move and delete as one
+grapheme.
+
+Redirect-only pipelines are byte-transparent. =(from file)= and
+=(to file)= copy arbitrary binary data.
+
+* Job control
+
+A trailing =&= launches an external command as a background job.
+Ctrl-Z stops the foreground command or pipeline. =jobs=, =fg=, =bg= and
+=disown= manage the job table:
+
+#+begin_src sh
+sleep 300 &
+make build
+jobs
+bg %2
+fg
+disown 1
+#+end_src
+
+The first command prints its job id and process id. Ctrl-Z during
+=make build= creates the stopped second job. =jobs= marks the current
+job with =+=. =bg %2= continues it in the background. =fg= brings the
+current job back to the terminal. =disown 1= drops the first job from
+the table; the process keeps running.
+
+Job specs:
+
+- =%1= or =1= by id
+- =%+=, =%%= or === for the current job
+- =%-= for the previous job
+- =%text= for the most recent job whose command starts with =text=
+
+Omitting the argument, =fg=, =bg= and =disown= act on the current job.
+=disown= also accepts a command substring: =disown build=. =jobs -l=
+adds process group ids, which is what =kill= wants: =kill -TERM -12345=
+ends a whole job. The builtins are ordinary functions: =(fg 1)=,
+=(disown "build")=, =(jobs)=.
+
+- Finished background jobs are announced before the next prompt as
+  =Done=, =Exit 2=, or the terminating signal.
+- A stopped job restores its terminal modes under =fg=.
+- Every external stage in a pipeline shares one process group. Builtin
+  workers stop, resume and terminate with that group.
+- =exit= and Ctrl-D warn once if stopped jobs exist. A second exit
+  proceeds. Orderly exit sends SIGHUP to tracked live job groups, then
+  SIGCONT to stopped groups.
+
+* Defining commands
+
+=defcommand= creates a command callable from the command line and from
+Lisp as an ordinary function:
 
 #+begin_src lisp
 (defcommand gs ()
@@ -227,22 +295,23 @@ from Lisp as an ordinary function:
   (cd directory))
 #+end_src
 
-After that, =gs= at the prompt works, and so does =(gs)= or
-=(mkcd "/tmp/scratch")= inside Lisp code. A command's integer return
-value becomes its exit status; any other value means 0. =run= executes
-one program in the foreground and returns its exit status; arguments
-are stringified with =princ-to-string=, so numbers and pathnames are
-fine.
+After that, =gs= works at the prompt, and so do =(gs)= and
+=(mkcd "/tmp/scratch")=. An integer return value becomes the exit
+status; any other value means 0. =run= executes one program in the
+foreground and returns its exit status. Arguments are stringified with
+=princ-to-string=.
 
-An =:arguments= declaration immediately after the docstring makes a command
-self-describing. It follows the ordinary Lisp lambda list: required and
-=&optional= parameters are positional, =&rest= is repeating, and =&key=
-parameters are options whose long name defaults to the lowercase parameter
-name. For example:
+An =:arguments= declaration after the docstring makes the command
+self-describing. It follows the Lisp lambda list:
+
+- required and =&optional= parameters are positional
+- =&rest= is repeating
+- =&key= parameters are options; the long name defaults to the
+  lowercase parameter name
 
 #+begin_src lisp
 (defcommand deploy (source &optional (mode "safe")
-                     &key force (jobs 1))
+                    &key force (jobs 1))
   "Deploy SOURCE."
   (:arguments
    (source :type :directory :help "Source tree to deploy.")
@@ -257,65 +326,41 @@ name. For example:
     (format t "replacement enabled~%")))
 #+end_src
 
-The command line then accepts =deploy src fast -f -j4=,
-=--jobs 4= and =--jobs=4=. Boolean short options can be grouped, and =--=
-ends option parsing. Unknown options, missing values, duplicate non-repeating
-options and missing required arguments return status 2 without entering the
-command body. The ordinary Lisp function is unchanged, so
-=(deploy "src" "fast" :force t :jobs 4)= uses normal Common Lisp calling
-conventions.
+The command line then accepts =deploy src fast -f -j4=, =--jobs 4= and
+=--jobs=4=. Boolean short options can be grouped. =--= ends option
+parsing. Unknown options, missing values, duplicate non-repeating
+options and missing required arguments return status 2. From Lisp, use
+ordinary calling conventions:
+=(deploy "src" "fast" :force t :jobs 4)=.
 
-Argument properties are:
+Argument properties:
 
-- =:type= for =:string=, =:boolean=, =:integer=, =:number=, =:path= or =:pathname=,
-  =:directory=, =:command=, =:package=, =:environment-variable=, =:job=,
-  =:choice=, or a conversion function;
-- =:short= and =:long= for option spellings, =:metavariable= for help text,
-  =:help= for the argument description, and =:required t= to require an
-  otherwise optional positional or option argument;
-- =:choices= for a list or a function receiving =(argument context)=;
-- =:completion= for a function receiving =(argument context)= and returning
-  candidates plus optional parallel descriptions as a second value. A
-  provider which needs separate insertion, display, description and semantic
-  kind fields may instead return =make-completion-candidate= records. Their
-  insertion text must already be shell-safe;
-- =:convert t= to turn strings into the declared type and validate choices;
-- =:converter= for a custom =(argument context)= conversion function. The
-  current raw text is =command-completion-context-prefix=.
+- =:type=: =:string=, =:boolean=, =:integer=, =:number=, =:path= or
+  =:pathname=, =:directory=, =:command=, =:package=,
+  =:environment-variable=, =:job=, =:choice=, or a conversion function
+- =:short= and =:long=: option spellings
+- =:metavariable=: help text placeholder
+- =:help=: argument description
+- =:required t=: require an otherwise optional argument
+- =:choices=: a list, or a function of =(argument context)=
+- =:completion=: a function of =(argument context)= returning
+  candidates, optionally with descriptions
+- =:convert t=: turn strings into the declared type and validate
+  choices
+- =:converter=: a custom =(argument context)= conversion function
 
-Types are advisory unless conversion is requested; boolean options are always
-mapped to Lisp booleans. This lets metadata improve help and completion without
-silently changing string arguments. Existing =defcommand= forms without an
-=:arguments= declaration retain their exact raw argument behavior.
+Boolean options map to Lisp booleans. With =:convert t=:
 
-With conversion enabled, path kinds become pathnames, packages and commands
-resolve to their live objects, environment-variable names remain strings, and
-job specifications resolve through the current job table. The latter therefore
-fails cleanly when the named job is no longer live.
+- path kinds become pathnames
+- packages and commands resolve to their live objects
+- environment-variable names stay strings
+- job specifications resolve through the current job table
 
-Completion and dynamic choice functions can inspect the command, active
-argument, complete preceding words, already used options, positional index,
-whether options remain enabled, prefix, buffer and cursor through the exported
-=command-completion-context-*= readers. Completion callback errors are
-contained and simply produce no candidates, so a transient provider failure
-does not break the editor.
+Every declared command supports =COMMAND --help=. =help COMMAND=
+renders usage, arguments and options.
 
-Simple provider values are converted to strings and shell-escaped by CCLSH.
-A rich =completion-candidate= retains its =insertion=, =display=,
-=description= and =kind= fields. The exported constructor, predicate and
-=completion-candidate-*= readers let application code produce and inspect that
-protocol without depending on editor presentation details.
-
-Every declared command supports =COMMAND --help=. =help COMMAND= renders
-generated usage, argument and option reference for any Lisp command. Existing
-manual section names take precedence when a section and command have the same
-name, so =help jobs= continues to show the fuller job-control chapter. Legacy
-commands do not intercept =--help=, preserving their exact raw argv behavior.
-
-Normally, =run= creates its own foreground job. When called synchronously by a
-=defcommand= which is executing as a =pipe= or =capture= builtin stage, it
-dynamically inherits that stage's standard input, output and error and joins
-the surrounding pipeline process group:
+A synchronous =run= inside a =defcommand= used as a =pipe= or
+=capture= stage joins that pipeline:
 
 #+begin_src lisp
 (defcommand ls (&rest arguments)
@@ -326,23 +371,28 @@ the surrounding pipeline process group:
       (wc "-l"))
 #+end_src
 
-The wrapper remains one logical builtin stage, waits for its child and returns
-the child's status. Its child participates in the pipeline's redirection and
-job control, including Ctrl-C, Ctrl-Z and =fg=. This inheritance applies to a
-synchronous =run= on the command worker's dynamic stack. Direct
-=ccl:run-program= calls and separately created Lisp threads bypass it.
+The wrapper is one pipeline stage: the child inherits redirection and
+job control.
 
-Builtins that ship with the shell: =cd= (supports =-=, updates =PWD=
-and =OLDPWD=), =exit=, =export=, =unset=, =rehash= (drop cached =PATH=
-lookups and completions), =commands= (list all defined commands),
-=zoxide-setup= and =help= (the built-in manual; =help SECTION=
-elaborates).
+Builtins that ship with the shell:
+
+- =cd=: supports =-=, updates =PWD= and =OLDPWD=
+- =exit=
+- =export=
+- =unset=
+- =rehash=: drop cached =PATH= lookups and completions
+- =commands=: list all defined commands
+- =help=: the built-in manual; =help SECTION= elaborates
+- =edit=
+- =jobs=, =fg=, =bg=, =disown=
+- =zoxide-setup=
+
+** Directory change hooks
 
 Every successful directory change runs the functions registered with
 =directory-change-hook-add=. A hook receives the old and new absolute
 directory names after =PWD=, =OLDPWD= and CCL's default directory have
-been updated. A failing hook is reported but cannot undo the directory
-change or prevent later hooks from running:
+been updated.
 
 #+begin_src lisp
 (defun announce-directory (old new)
@@ -352,254 +402,136 @@ change or prevent later hooks from running:
 (directory-change-hook-remove 'announce-directory)
 #+end_src
 
-Use the symbol form for named hooks so redefining the function does not
-change its registration identity. A hook cannot change directory again;
-a reentrant =cd= is rejected so every later hook observes coherent state.
+Register the function by symbol so redefinition keeps the same hook
+identity.
 
-The optional zoxide adapter uses that hook. Install =zoxide=, and =fzf=
-for interactive selection, then put =(zoxide-setup)= in
-=startup.lisp=. It records the current directory, records later changes
-and installs two commands:
+** zoxide
+
+Install =zoxide=, and =fzf= for interactive selection. Put
+=(zoxide-setup)= in =startup.lisp=. It records the current directory,
+records later changes, and installs two commands:
+
+| Command         | Action                                |
+|-----------------+---------------------------------------|
+| =z=               | go home                               |
+| =z -=             | go to =OLDPWD=                          |
+| =z ./existing=    | enter an existing path                |
+| =z project src=   | query zoxide and enter the best match |
+| =zi project=      | select a zoxide match through =fzf=     |
+
+* Editing recorded definitions
+
+=edit= opens a function's recorded source in a temporary UTF-8 Lisp
+file. It uses =VISUAL=, then =EDITOR=, then =vi=. Editor values may
+include arguments, such as =emacsclient --wait=.
 
 #+begin_src text
-z                 go home
-z -               go to OLDPWD
-z ./existing      enter an existing path directly
-z project src     query zoxide and enter the best match
-zi project        select a zoxide match interactively through fzf
+edit my-function
+edit cl:mapcar
 #+end_src
 
-=zoxide-setup= is idempotent and activates its hook and commands only after
-zoxide records the current directory successfully. If zoxide disappears,
-running setup again removes its stale hook and command bindings. Until setup
-succeeds, an external program named =z= or =zi= can still resolve.
-
-* Pipelines and sequencing
-
-Process orchestration is spelled in Lisp. Stage heads resolve exactly
-like the first word of a command line, while stage arguments are evaluated
-Lisp expressions. A scalar becomes one stringified argument, NIL contributes
-no arguments, and a proper list splices one level:
+From Lisp:
 
 #+begin_src lisp
-(cmd git "status")                    ; one command, mid-Lisp
-(pipe (ls "-la") (grep "lisp"))       ; ls -la | grep lisp
-(pipe (ls "-1" (glob "screenshot-*")) ; explicit wildcard splice
-      (wc "-l"))
-(seq (make "clean") (make))           ; make clean ; make
-(all (make) (make "install"))         ; make && make install
-(any (probe) (echo "fallback"))       ; probe || echo fallback
-
-(let ((pattern "defun"))
-  (pipe (git "grep" pattern) (wc "-l")))
+(edit #'my-function)
+(edit 'my-function)
 #+end_src
 
-=glob= applies the same tilde, environment-variable, =*= and =?= expansion as
-a bare command word. It returns an ordinary proper list, so its result can be
-stored, combined or filtered before use as a stage argument. Matches are
-sorted within each pattern, pattern order is retained, and a pattern without
-matches remains literal. Ordinary strings never glob: ="-l"= is a flag,
-while =-l= is a Lisp variable reference.
-
-=cmd= is the single-command sibling of a pipe stage: the head resolves
-like the first word of a command line, the arguments are evaluated
-Lisp expressions (so variables work; bare words do not), and the exit
-status comes back. =run= is its function counterpart when the program name
-itself is computed, but retains ordinary function-call semantics and does not
-splice lists. Spread a computed list explicitly when needed:
-
-#+begin_src lisp
-(apply #'run "ls" "-1" (glob "screenshot-*"))
-#+end_src
-
-Redirection is spelled as stages, recognized by name inside =pipe= and
-=capture=: =(from "file")= first feeds standard input, =(to "file")=
-or =(append-to "file")= last writes the output, and anywhere in the
-pipeline =(error-to "file")=, =(error-append-to "file")= or
-=(merge-error)= direct the standard error of every stage to a file or
-into the ordinary output (sh's =2>=, =2>>= and =2>&1=). =capture=
-returns the output as a string with trailing newlines trimmed, which
-is sh's =$(cmd)=, and composes with Lisp substitution:
-
-#+begin_src lisp
-(pipe (make) (to "build.log"))            ; make > build.log
-(pipe (make "install") (append-to "build.log"))
-(pipe (from "access.log") (grep "500") (wc "-l"))
-(pipe (from "a.bin") (to "b.bin"))        ; byte-exact file copy
-
-(pipe (make) (error-to "errors.log"))     ; make 2> errors.log
-(pipe (make) (to "all.log") (merge-error)) ; make > all.log 2>&1
-(capture (make) (merge-error))            ; both streams as a string
-
-(capture (git "rev-parse" "HEAD"))        ; "3e45271..." as a string
-(defvar *head* (capture (git "rev-parse" "--short" "HEAD")))
-#+end_src
-
-And from the command line, capture inside a substitution:
-
-#+begin_src sh
-echo deployed (capture (git "rev-parse" "--short" "HEAD"))
-#+end_src
-
-File redirection is byte-transparent, =capture= decodes UTF-8, and error
-redirection covers builtin stages' =*error-output*= too. =error-to=
-and =merge-error= are mutually exclusive.
-
-Each returns the deciding exit status and records it in
-=*last-status*=. Builtin commands can appear inside =pipe= as well;
-they run concurrently and stream output to the next stage. A synchronous
-=run= inside such a builtin dynamically inherits its prepared descriptors and
-the surrounding pipeline job, so external-program wrappers stream and receive
-signals like direct external stages.
-
-* Unicode and bytes
-
-cclsh uses UTF-8 for terminal input and output, startup and history
-files, scripts, prompt renderer output, environment names and values, child
-arguments, executable paths, and captured pipeline text. This is an
-explicit shell invariant and does not depend on =LANG= or =LC_ALL=.
-The editor measures terminal cells rather than Lisp characters, so
-wide CJK and emoji glyphs wrap correctly, while combining marks and
-joined emoji move and delete as one grapheme.
-
-Redirect-only pipelines remain byte-transparent. Use =(from file)= and
-=(to file)= without a Lisp builtin or =capture= when copying arbitrary
-binary data.
-
-* Job control
-
-A trailing =&= launches an external command as a background job,
-Ctrl-Z stops the foreground command or pipeline, and =jobs=, =fg=, =bg=
-and =disown= manage what the job table holds:
-
-#+begin_src sh
-sleep 300 &
-make build
-jobs
-bg %2
-fg
-disown 1
-#+end_src
-
-The first command prints its job id and process id. Press Ctrl-Z during
-=make build= to create the stopped second job. =jobs= marks the current job
-with =+=, =bg %2= continues it in the background, and =fg= brings the current
-job back to the terminal. =disown 1= removes the first job from shell
-management without signaling it, so it is no longer listed or sent SIGHUP
-when cclsh exits.
-
-Job specs work like sh: =%1= or plain =1= by id, =%+=, =%%= or === for
-the current job, =%-= for the previous one, and =%text= for the most
-recent job whose command starts with =text=. Without an argument =fg=
-and =bg= act on the current job, the one =jobs= marks with =+=.
-=disown= does the same without an argument and additionally accepts any
-command substring, for example =disown build=. =jobs -l= adds process group
-ids, which is what =kill= wants: =kill -TERM -12345= ends a whole job. The
-builtins are ordinary functions too, so =(fg 1)=, =(disown "build")= and
-=(jobs)= work from Lisp.
-
-Details worth knowing:
-
-- Finished background jobs are announced before the next prompt as
-  =Done=, =Exit 2= or the signal that ended them.
-- A stopped job remembers the terminal modes it was using and gets
-  them back under =fg=, so stopping =vim=, running other commands and
-  resuming works.
-- Every external stage in a pipeline shares one process group. Builtin
-  workers stop, resume and terminate with that group, so =fg= and =bg=
-  control the pipeline as one job.
-- A =capture= cannot stop, because the shell itself is reading its
-  output: Ctrl-Z prints a notice and the capture keeps running.
-- =exit= and Ctrl-D warn once when stopped jobs would be left behind.
-  Repeating the exit leaves anyway. Every orderly exit sends SIGHUP to
-  tracked live job groups and follows it with SIGCONT for stopped groups.
-- Backgrounding is for external commands: builtins and Lisp forms
-  have no separate process, so =&= reports an error for them.
+After the editor exits, cclsh shows a Colordiff with Lisp syntax
+highlighting, evaluates the edited top-level form in the function's
+package, and installs the definition in the live image. Later =edit=
+calls reuse that text.
 
 * Line editing and completion
 
-Clinedi provides the Unicode-aware editing state, key decoding and terminal
-repaint loop. cclsh supplies shell completion, highlighting, history and prompt
-policy through its callbacks.
+The built-in prompt shows =username@hostname (PACKAGE) directory $.
+See [[*Configuration]] to replace it.
 
-The built-in prompt shows =username@hostname (PACKAGE) directory $=. Prompt
-policy is otherwise user configuration; see [[*Configuration][Configuration]] for the callback
-used to replace it.
+| Key                  | Action                              |
+|----------------------+-------------------------------------|
+| Tab                  | complete commands, files or symbols |
+| Left, C-b            | move cursor left                    |
+| Right, C-f           | move right or accept a suggestion   |
+| Ctrl-Left/Right      | move backward/forward by word       |
+| Up/Down, C-p/C-n     | older/newer matching history entry  |
+| Home/End, C-a/C-e    | start/end of line                   |
+| Backspace            | delete backward                     |
+| Delete               | delete forward                      |
+| C-d on text          | delete forward                      |
+| C-d on empty line    | exit the shell                      |
+| C-w, C-Backspace/C-h | delete word backward                |
+| C-k                  | kill to end of line                 |
+| C-u                  | discard the whole line              |
+| C-l                  | clear screen                        |
+| C-c                  | abort the current line              |
+| Alt/Ctrl-Enter       | insert a newline                    |
+| Shift-Enter          | same, when the terminal reports it  |
 
-| Key                 | Action                              |
-|---------------------+-------------------------------------|
-| Tab                 | complete commands, files or symbols |
-| Left, C-b           | move cursor left                    |
-| Right, C-f          | move right or accept a suggestion   |
-| Ctrl-Left/Right     | move backward/forward by word       |
-| Up/Down, C-p/C-n    | older/newer matching history entry  |
-| Home/End, C-a/C-e   | start/end of line                   |
-| Backspace           | delete backward                     |
-| Delete              | delete forward                      |
-| C-d on text         | delete forward                      |
-| C-d on empty line   | exit the shell                      |
-| C-w, C-Backspace/C-h | delete word backward               |
-| C-k                 | kill to end of line                 |
-| C-u                 | discard the whole line              |
-| C-l                 | clear screen                        |
-| C-c                 | abort the current line              |
-| Alt/Ctrl-Enter      | insert a newline without submitting |
-| Shift-Enter (*)     | same when reported by the terminal  |
+At a slash-free command position, Tab completes command names and
+directories. For commands with =:arguments= it also completes the
+active positional or option value:
 
-(*) Clinedi requests CSI-u and modifyOtherKeys reporting while it owns the
-terminal. Modified Enter works when the terminal supports either protocol.
+- options display with their help
+- choices may be static or dynamic
+- path, directory, command, package, environment-variable and job
+  arguments use semantic providers
+- grouped short options, attached values, =--long=value= and =--= are
+  honored
 
-At a slash-free command position, Tab completes command names (=PATH=
-executables plus defined commands) and directories. For self-describing
-commands it also understands the active positional or option value: options
-are displayed with their help, choices may be static or dynamic, and path,
-directory, command, package, environment-variable and job arguments use
-semantic providers. It honors
-grouped short options, attached values, =--long=value= and =--=. Commands
-without declarations retain generic file completion. Lisp symbols complete in
-Lisp mode, including =:keywords=. Directories complete with a trailing =/=,
-which makes a command-position directory ready for implicit =cd=, and spaces
-get escaped. A
-unique match inserts itself, several matches extend to their common prefix,
-and pressing Tab again opens a width-measured candidate grid. Arrow keys
-navigate the grid and Tab cycles candidates. Escape restores the original
-prefix. Other input keeps the selected candidate before applying that input.
+Other commands complete files. Lisp symbols complete in Lisp mode,
+including =:keywords=. Directories complete with a trailing =/=.
+Spaces are escaped.
 
-With text already entered, Up or C-p and Down or C-n traverse only history
-entries containing the complete draft captured when backward traversal begins.
-A lowercase draft matches without regard to case; any uppercase letter makes
-the search case-sensitive. Down past the newest match restores the exact draft
-and cursor. Empty input traverses the complete history normally.
+- A unique match inserts itself.
+- Several matches extend to their common prefix.
+- Tab again opens a candidate grid. Arrow keys navigate; Tab cycles.
+  Escape restores the original prefix.
 
-The dim suggestion is separate: the newest history entry beginning with the
-current input appears after the cursor. Press Right or C-f at the end of the
-input to accept the whole suggestion. Moving within existing input keeps the
-ordinary one-character Right and C-f behavior.
+With text already entered, Up or C-p and Down or C-n traverse history
+entries containing the draft captured when backward traversal begins.
+A lowercase draft is case-insensitive. Any uppercase letter makes the
+search case-sensitive. Down past the newest match restores the draft
+and cursor. Empty input traverses the complete history.
+
+The dim suggestion is the newest history entry beginning with the
+current input. Right or C-f at the end of the input accepts it.
 
 Input highlights as you type with the standard 16 terminal colors.
-In command mode: external commands green, builtins and valid implicit
-directory paths cyan, unknown commands red, lone bound variables magenta,
-strings yellow, numbers cyan, =$VAR= references magenta, glob wildcards and a
-leading =~= bright magenta, backslash escapes dim. In Lisp mode: known
-operators in head position blue (a typo like =defparam= never lights up),
-keywords and quotes magenta, numbers, characters and constants cyan, bound
-=*earmuffed*= specials magenta, strings yellow, comments and parens dim.
+
+Command mode:
+
+- external commands: green
+- builtins and valid implicit directory paths: cyan
+- unknown commands: red
+- lone bound variables: magenta
+- strings: yellow
+- numbers: cyan
+- =$VAR=: magenta
+- glob wildcards and a leading =~=: bright magenta
+- backslash escapes: dim
+
+Lisp mode:
+
+- known operators in head position: blue
+- keywords and quotes: magenta
+- numbers, characters and constants: cyan
+- bound =*earmuffed*= specials: magenta
+- strings: yellow
+- comments and parens: dim
 
 * History
 
-History lives in =~/.config/cclsh/history= (=XDG_CONFIG_HOME= is
-respected), one printed string per entry, capped at 10000 entries on
-load. Blank lines, aborted lines and immediate duplicates are not
-recorded. Piped (non-interactive) sessions neither load nor write
-history. Recalled entries retain embedded newlines exactly. Typing a substring
-before pressing Up filters traversal with the smart-case rules described under
-[[*Line editing and completion][Line editing and completion]].
+Interactive sessions load and write =~/.config/cclsh/history=
+(=XDG_CONFIG_HOME= is respected), one printed string per entry, capped
+at 10000 entries on load. Submitted non-blank lines are recorded.
+Immediate duplicates are skipped. Recalled entries keep embedded
+newlines.
 
 * Configuration
 
 =~/.config/cclsh/startup.lisp= loads in =cclsh-user= for interactive
-sessions and configured one-shots. A broken startup file prints its error
-and the shell continues anyway. Create it with private permissions:
+sessions and configured one-shots. A broken startup file prints its
+error and the shell starts. Create it with private permissions:
 
 #+begin_src sh
 install -d -m 700 ~/.config/cclsh
@@ -607,20 +539,20 @@ touch ~/.config/cclsh/startup.lisp
 chmod 600 ~/.config/cclsh/startup.lisp
 #+end_src
 
-The [[file:../examples/startup.lisp][example startup file]] is a sanitized,
-host-neutral template that establishes a login-safe =PATH=, XDG directories,
-a few commands and optional zoxide integration. When copying it from a source
-checkout, use its absolute path rather than assuming that =examples/= exists in
-the current directory. The template deliberately omits credentials, private
-services, display/session addresses, locale policy and machine-specific tool
-paths.
+The [[file:../examples/startup.lisp][example startup file]] is a
+host-neutral template: a login-safe =PATH=, XDG directories, a few
+commands and optional zoxide integration.
 
-Prompt rendering is configured through =*prompt-function*=. Leave it =nil=
-for =prompt-default=, or set it to a function designator in =startup.lisp=.
-The function receives keyword snapshots named =:status=,
-=:duration-milliseconds=, =:columns= and =:job-count=. A returned string is
-used verbatim, including ANSI or multiple lines; =nil= selects the built-in
-prompt. Errors and other return values are reported and safely fall back:
+Prompt rendering is configured through =*prompt-function*=. The function
+receives keyword snapshots:
+
+- =:status=
+- =:duration-milliseconds=
+- =:columns=
+- =:job-count=
+
+A returned string is used verbatim, including ANSI or multiple lines.
+=nil= selects the built-in prompt.
 
 #+begin_src lisp
 (defun compact-prompt
@@ -630,69 +562,37 @@ prompt. Errors and other return values are reported and safely fall back:
 (setf *prompt-function* 'compact-prompt)
 #+end_src
 
-The package environment is synchronized before this function runs. The last
-command status is dynamically protected while it runs, so prompt helpers
-cannot accidentally replace it.
+Interactive terminal sessions emit OSC 133 semantic shell-integration
+markers for prompt start, input start, execution start and command
+completion. The completion marker includes the exit status. Set
+=*semantic-prompt-markers-enabled*= to =nil= in =startup.lisp= to turn
+them off.
 
-Interactive terminal sessions emit OSC 133 semantic shell-integration markers
-for prompt start, input start, execution start and command completion. The
-completion marker includes the command's exit status. Set
-=*semantic-prompt-markers-enabled*= to =nil= in =startup.lisp= to disable them.
-
-Clinedi key bindings are configured through =*line-editor-keymap*=. Keymap
-events are the semantic names returned by Clinedi's decoder, such as =:left=,
-=:word-right=, =:kill-line= and =:complete=. Commands use the same stable names;
-a custom function receives the incremental editor and original event and
-returns an editor action and optional payload. For example, this makes the
-decoded Ctrl-Right event perform ordinary one-grapheme right motion:
+Key bindings are configured through =*line-editor-keymap*=. Events are
+semantic names such as =:left=, =:word-right=, =:kill-line= and
+=:complete=. For example, this makes Ctrl-Right move one grapheme:
 
 #+begin_src lisp
 (clinedi:keymap-bind *line-editor-keymap* :word-right :right)
 #+end_src
 
-Use =clinedi:make-keymap= with =:parent= for a layer, or
-=clinedi:copy-keymap= for a completely detached copy. =keymap-unbind= removes
-only a local override, revealing an inherited binding when one exists. CCLSH's
-default map is private to its image, so startup customizations do not mutate
-Clinedi's defaults or another editor.
+* Scripting
 
-* Quicklisp and scripting
-
-The optional experimental =cclsh-fast= launcher can reuse a preloaded one-shot
-worker for no-argument interactive sessions. It is a separate opt-in command;
-ordinary =cclsh= and all scripts remain daemon-free. See [[file:installation.org::*Experimental prewarmed launcher][Experimental
-prewarmed launcher]] for setup, exact fallback rules and pseudoterminal limits.
-
-Every saved cclsh image includes Quicklisp and the pinned Clinedi and
-cl-colorist editor dependencies, so =(ql:quickload :system)= works immediately
-and makes the shell a decent scripting host:
+Saved images include Quicklisp:
 
 #+begin_src lisp
 (ql:quickload :dexador)
 (dex:get "https://example.com")
 #+end_src
 
-=quicklisp-setup= remains useful when running cclsh directly from an
-unsaved CCL development image: it loads an existing =~/quicklisp= or
-installs one with curl. =scripts/build= itself never produces an image
-without Quicklisp. Both source-built and Nix images rebase the loaded client
-to an existing =~/quicklisp= or a writable XDG data tree before commands and
-scripts run. The embedded template contains only the Quicklisp client and
-distribution metadata, never the builder's local init, configuration, caches
-or downloaded systems.
+=quicklisp-setup= loads an existing =~/quicklisp= or installs one with
+curl, useful when running from an unsaved CCL development image.
 
-ASDF source-registry discovery is lazy. Starting an ordinary shell does not
-recursively scan local project trees; the first ASDF system lookup performs
-the configured discovery, and later lookups reuse it.
+By convention, scripts are named =NAME.sh.lisp=. The final =.lisp=
+keeps the file recognizable to Lisp tooling; =.sh= marks it as
+shell-oriented.
 
-By convention, cclsh scripts are named =NAME.sh.lisp=. This is the canonical
-compound suffix, not a runtime requirement; extensionless scripts and existing
-names continue to run. The final =.lisp= keeps the file recognizable to Lisp
-tooling, while =.sh= marks it as shell-oriented code. Command-mode lines and
-shebangs can still make it cclsh-specific rather than portable Common Lisp
-source that =load= can read directly.
-
-Scripts run three ways, all skipping =startup.lisp= and history:
+Scripts run three ways. They skip =startup.lisp= and history:
 
 #+begin_src sh
 cclsh -c 'echo one shot'
@@ -700,7 +600,7 @@ cclsh provision.sh.lisp
 printf 'ls\n(+ 1 2)\nexit\n' | cclsh
 #+end_src
 
-The built-in manual is also available as a stateless command-line action:
+The built-in manual is also a stateless command-line action:
 
 #+begin_src sh
 cclsh help
@@ -708,24 +608,20 @@ cclsh help scripting
 cclsh help cd
 #+end_src
 
-It accepts the same manual sections or command names and returns the same
-status as =help= inside the shell. Use =cclsh -- help argument= or
-=cclsh ./help argument= to run a script file literally named =help= instead.
-
-Use a configured command string when the command needs aliases, PATH changes
-or other definitions from =startup.lisp=:
+Use a configured command string when the command needs aliases, PATH
+changes or other definitions from =startup.lisp=:
 
 #+begin_src sh
 cclsh -lc 'z project'
 cclsh -ic 'echo $EDITOR'
 #+end_src
 
-The short flags can be combined in either order, so =-lc=, =-cl= and
-=-ilc= all work. A preceding =-l= or =-i= also configures a later =-c=.
-Configured command strings still skip history. =CCLSH_SAFE=1= suppresses the
-startup file even in configured mode.
+The short flags combine in either order: =-lc=, =-cl=, =-ilc=. A
+preceding =-l= or =-i= also configures a later =-c=. Configured command
+strings skip history. =CCLSH_SAFE=1= skips the startup file even in
+configured mode.
 
-Script files also work as shebang interpreters:
+Script files work as shebang interpreters:
 
 #+begin_src sh
 #!/usr/local/bin/cclsh
@@ -733,59 +629,17 @@ Script files also work as shebang interpreters:
 (all (make "build") (make "deploy"))
 #+end_src
 
-Inside a script, =*argv*= contains the script path followed by every argument
-supplied after it. For example, =cclsh provision.sh.lisp alpha "two words"=
-binds it to =("provision.sh.lisp" "alpha" "two words")=. Arguments beginning
-with a dash remain script data, and =*argv*= is =nil= outside script mode. Use
-=cclsh -- -script.sh.lisp argument= when the script path itself begins with a
-dash. Keep the executable basename =cclsh=; the patched CCL kernel uses that
-name to stop its own option parser at cclsh's command or script boundary.
+Inside a script, =*argv*= contains the script path followed by every
+argument supplied after it. =cclsh provision.sh.lisp alpha "two words"=
+binds it to =("provision.sh.lisp" "alpha" "two words")=. Arguments
+beginning with a dash are script data. =*argv*= is =nil= outside script
+mode. Use =cclsh -- -script.sh.lisp argument= when the script path
+begins with a dash.
 
 The process exit code is the shell's last status, or the argument of
 =exit=.
 
-By the way, the Quicklisp relationship runs in both directions. Once this
-checkout is visible to ASDF or Quicklisp, any Clozure Common Lisp program
-can quickload it and call its process helpers directly, without starting
-the shell or calling =(main)=. =run=, =cmd=, =pipe=, =capture=, =seq=,
-=all=, =any=, =glob= and =defcommand= all work as soon as the system is
-loaded:
-
-#+begin_src lisp
-(ql:quickload :cclsh)
-
-(cclsh:capture (git "rev-parse" "--short" "HEAD")) ; => "3e45271", 0
-(cclsh:all (make "test") (make "install"))
-#+end_src
-
-Command designators such as =git= and =make= are read as plain symbols in
-the calling package; only the printed name matters, so nothing needs
-importing just to name a program. Package-qualify the macros and
-functions, or pull in exactly what a script needs with =:import-from=,
-rather than =:use=-ing =cclsh= wholesale, since it shadows =cl:export=
-for its own environment builtin. When standard input is a terminal, a
-foreground helper temporarily gives its child process group the terminal
-and then returns it to the host CCL process group. Shell entry points
-dynamically mark their terminal signal policy as active. Library calls leave
-that marker =nil=, block =SIGTTOU= only around the required terminal-control
-calls and restore the calling thread's prior signal mask. Loading the system
-does not change the host's signal dispositions. This works from a batch
-program, a build tool or a foreground CCL REPL. Do not run concurrent
-foreground helpers against the same terminal.
-
 * Login-shell use
 
-Login-shell installation, validation and recovery need additional care. See
-[[file:installation.org][Installing cclsh]] for the complete procedure.
-
-* Current limitations
-
-- Ctrl-Z stops external commands and pipelines, including builtin
-  stages inside a pipeline. Standalone builtins and other Lisp
-  evaluation run inside the shell process, so stopping a busy form
-  stops the whole shell.
-- No => < >>= characters in command mode; redirection is Lisp:
-  =(to ...)=, =(append-to ...)=, =(from ...)=, =(error-to ...)=,
-  =(merge-error)= and =(capture ...)=.
-- =-c= strings and scripts use cclsh syntax, not sh; complex remote
-  commands may need =sh -c= spelled explicitly.
+See [[file:installation.org][Installing cclsh]] for login-shell
+installation, validation and recovery.
