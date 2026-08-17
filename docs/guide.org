@@ -524,14 +524,15 @@ Lisp mode:
 Interactive sessions load and write =~/.config/cclsh/history=
 (=XDG_CONFIG_HOME= is respected), one printed string per entry, capped
 at 10000 entries on load. Submitted non-blank lines are recorded.
-Immediate duplicates are skipped. Recalled entries keep embedded
-newlines.
+Immediate duplicates are skipped. 
 
 * Configuration
 
 =~/.config/cclsh/startup.lisp= loads in =cclsh-user= for interactive
 sessions and configured one-shots. A broken startup file prints its
-error and the shell starts. Create it with private permissions:
+error and the shell starts.
+
+Create it with private permissions:
 
 #+begin_src sh
 install -d -m 700 ~/.config/cclsh
