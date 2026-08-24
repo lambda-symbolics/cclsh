@@ -122,7 +122,7 @@ then
     exit 1
 fi
 build_root=$PWD
-if ! (
+if (
      cd "$validation_home"
      HOME="$validation_home" \
      XDG_CACHE_HOME="$validation_home/cache" \
@@ -253,7 +253,12 @@ if ! (
         (values))'
      )
 then
-    echo "cclsh build: staged saved-image validation failed" >&2
+    :
+else
+    validation_status=$?
+    echo \
+        "cclsh build: staged saved-image validation failed (status $validation_status)" \
+        >&2
     exit 1
 fi
 if ! scripts/verify-argument-boundary \

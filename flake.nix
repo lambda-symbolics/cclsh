@@ -332,13 +332,17 @@
 
       portableCclsh = cclsh.overrideAttrs (old: {
         pname = "cclsh-portable";
-        buildPhase = lib.replaceStrings
-          [
-            ''export CCLSH_PACKAGED_QUICKLISP_TEMPLATE="$out/share/cclsh/quicklisp"
-            ''
-          ]
-          [ "" ]
-          old.buildPhase;
+        buildPhase =
+          ''
+            export CCLSH_BUILD_VALIDATION_TIMEOUT=120
+          ''
+          + lib.replaceStrings
+            [
+              ''export CCLSH_PACKAGED_QUICKLISP_TEMPLATE="$out/share/cclsh/quicklisp"
+              ''
+            ]
+            [ "" ]
+            old.buildPhase;
       });
 
       releaseArtifact = pkgs.runCommand
