@@ -55,7 +55,7 @@
         name = "structlisp-${builtins.substring 0 7 structlispRev}";
         url = "https://github.com/lambda-symbolics/structlisp.git";
         rev = structlispRev;
-        hash = "sha256-hz+vHx7WNA1QLpS9bUzyMufeBxoce6qjjWliKp4WKtQ=";
+        hash = "sha256-RmJDWvqPOjwh6M/7pyxedy9Q7nctLcphVLHMqD7+/64=";
         leaveDotGit = true;
       };
 
@@ -79,7 +79,7 @@
         name = "colordiff-${builtins.substring 0 7 colordiffRev}";
         url = "https://github.com/lambda-symbolics/colordiff.git";
         rev = colordiffRev;
-        hash = "sha256-B3DsZb8WsRqKPn4Al8SiQ+HhBSJ95nZukmeB2nXU/eI=";
+        hash = "sha256-2UbjHhFW44hcnspZEF2Y+ZsclZGE08e75ZTfC4Gg70I=";
         leaveDotGit = true;
       };
 
