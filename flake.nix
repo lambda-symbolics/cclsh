@@ -14,6 +14,7 @@
       system = "x86_64-linux";
       pkgs = import nixpkgs { inherit system; };
       lib = pkgs.lib;
+      version = "1.5.0";
       buildCommit = self.shortRev or self.dirtyShortRev or "unknown";
 
       dependencyLines = lib.splitString "\n" (builtins.readFile ./dependencies.lock);
@@ -214,7 +215,7 @@
 
       cclsh = pkgs.stdenv.mkDerivation {
         pname = "cclsh";
-        version = "1.4.0";
+        inherit version;
         src = self;
 
         nativeBuildInputs = [
@@ -328,12 +329,74 @@
           platforms = [ "x86_64-linux" ];
         };
       };
+
+      portableCclsh = cclsh.overrideAttrs (old: {
+        pname = "cclsh-portable";
+        buildPhase = lib.replaceStrings
+          [
+            ''export CCLSH_PACKAGED_QUICKLISP_TEMPLATE="$out/share/cclsh/quicklisp"
+            ''
+          ]
+          [ "" ]
+          old.buildPhase;
+      });
+
+      releaseArtifact = pkgs.runCommand
+        "cclsh-${version}-linux-x86_64-release"
+        {
+          nativeBuildInputs = [
+            pkgs.coreutils
+            pkgs.gnutar
+            pkgs.xz
+          ];
+        }
+        ''
+          root="$TMPDIR/cclsh-${version}-linux-x86_64"
+          install -d -m 755 "$root/bin" "$root/lib" "$root/libexec" \
+            "$root/licenses"
+
+          install -m 755 ${./release/cclsh} "$root/bin/cclsh"
+          install -m 755 ${./release/cclsh-fast} "$root/bin/cclsh-fast"
+          install -m 644 ${./release/README.txt} "$root/README.txt"
+          install -m 644 ${./LICENSE} "$root/licenses/cclsh-isc.txt"
+          install -m 644 ${./patches/LICENSE} "$root/licenses/ccl-apache-2.0.txt"
+          tar -xOf ${pkgs.glibc.src} --wildcards --no-anchored COPYING.LIB \
+            >"$root/licenses/glibc-lgpl-2.1.txt"
+
+          install -m 755 ${portableCclsh}/bin/cclsh "$root/libexec/cclsh-kernel"
+          install -m 755 ${portableCclsh}/bin/cclsh-fast \
+            "$root/libexec/cclsh-fast-kernel"
+          install -m 644 ${portableCclsh}/bin/cclsh.image "$root/lib/cclsh.image"
+          ln "$root/lib/cclsh.image" "$root/lib/cclsh-loader.image"
+          install -m 755 ${pkgs.stdenv.cc.bintools.dynamicLinker} \
+            "$root/lib/cclsh-loader"
+
+          for library in \
+            libc.so.6 libdl.so.2 libm.so.6 libpthread.so.0 librt.so.1 \
+            libutil.so.1
+          do
+            cp -L ${pkgs.glibc}/lib/"$library" "$root/lib/$library"
+          done
+
+          install -m 755 ${./release/cclsh} "$root/lib/cclsh"
+
+          mkdir -p "$out"
+          tar --create --xz --file="$out/cclsh-${version}-linux-x86_64.tar.xz" \
+            --directory="$TMPDIR" \
+            --sort=name \
+            --mtime='@1' \
+            --owner=0 \
+            --group=0 \
+            --numeric-owner \
+            "cclsh-${version}-linux-x86_64"
+        '';
     in
     {
       packages.${system} = {
         default = cclsh;
         cclsh = cclsh;
         patched-ccl = patchedCcl;
+        release-artifact = releaseArtifact;
       };
 
       apps.${system}.default = {
@@ -353,7 +416,7 @@
           chmod 700 "$XDG_RUNTIME_DIR"
 
           ${lib.getExe cclsh} --version >version
-          grep -F "cclsh 1.4.0" version
+          grep -F "cclsh ${version}" version
           grep -F "clinedi ${clinediRev}" version
           grep -F "cl-colorist ${clColoristRev}" version
           ${lib.getExe cclsh} -c 'exit 0'

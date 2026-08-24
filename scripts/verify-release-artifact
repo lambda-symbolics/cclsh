@@ -1,0 +1,97 @@
+#!/bin/sh
+set -eu
+
+if [ "$#" -ne 1 ]; then
+    echo "usage: scripts/verify-release-artifact ARCHIVE.tar.xz" >&2
+    exit 64
+fi
+
+archive=$1
+case "$archive" in
+    *[!A-Za-z0-9._/-]* | '')
+        echo "cclsh release artifact: unsafe archive path" >&2
+        exit 64
+        ;;
+esac
+
+if [ ! -f "$archive" ]; then
+    echo "cclsh release artifact: archive does not exist: $archive" >&2
+    exit 66
+fi
+
+name=$(basename -- "$archive")
+case "$name" in
+    cclsh-*-linux-x86_64.tar.xz)
+        version=${name#cclsh-}
+        version=${version%-linux-x86_64.tar.xz}
+        ;;
+    *)
+        echo "cclsh release artifact: unexpected archive name: $name" >&2
+        exit 65
+        ;;
+esac
+
+temporary=$(mktemp -d)
+cleanup()
+{
+    rm -rf -- "$temporary"
+}
+trap cleanup EXIT HUP INT TERM
+
+tar -tJf "$archive" >/dev/null
+tar -xJf "$archive" -C "$temporary"
+root="$temporary/${name%.tar.xz}"
+export HOME="$temporary/home"
+export XDG_CACHE_HOME="$temporary/cache"
+export XDG_CONFIG_HOME="$temporary/config"
+export XDG_DATA_HOME="$temporary/data"
+export XDG_RUNTIME_DIR="$temporary/runtime"
+mkdir -p "$HOME" "$XDG_CACHE_HOME" "$XDG_CONFIG_HOME" \
+    "$XDG_DATA_HOME" "$XDG_RUNTIME_DIR"
+chmod 700 "$XDG_RUNTIME_DIR"
+
+for file in \
+    "$root/README.txt" \
+    "$root/bin/cclsh" \
+    "$root/bin/cclsh-fast" \
+    "$root/lib/cclsh-loader" \
+    "$root/lib/cclsh-loader.image" \
+    "$root/lib/cclsh" \
+    "$root/lib/cclsh.image" \
+    "$root/libexec/cclsh-kernel" \
+    "$root/libexec/cclsh-fast-kernel"
+do
+    if [ ! -f "$file" ]; then
+        echo "cclsh release artifact: required file is missing: $file" >&2
+        exit 65
+    fi
+done
+
+if [ ! -x "$root/bin/cclsh" ] || [ ! -x "$root/bin/cclsh-fast" ]; then
+    echo "cclsh release artifact: launchers are not executable" >&2
+    exit 65
+fi
+
+version_output=$("$root/bin/cclsh" --version)
+printf '%s\n' "$version_output" | grep -F "cclsh $version" >/dev/null
+install -d -m 755 "$temporary/bin"
+ln -s "$root/bin/cclsh" "$temporary/bin/cclsh"
+linked_version_output=$(PATH="$temporary/bin:$PATH" cclsh --version)
+if [ "$linked_version_output" != "$version_output" ]; then
+    echo "cclsh release artifact: cclsh symlink differs" >&2
+    exit 65
+fi
+"$root/bin/cclsh" -c 'exit 0'
+"$root/bin/cclsh" -c \
+    '(when cclsh::*packaged-quicklisp-template*
+       (error "release image has a non-portable Quicklisp template"))' \
+    >/dev/null
+
+fast_version_output=$("$root/bin/cclsh-fast" --version)
+if [ "$fast_version_output" != "$version_output" ]; then
+    echo "cclsh release artifact: cclsh-fast version differs" >&2
+    exit 65
+fi
+"$root/bin/cclsh-fast" daemon start
+"$root/bin/cclsh-fast" daemon status | grep -Fx 'ready=1 active=0' >/dev/null
+"$root/bin/cclsh-fast" daemon stop

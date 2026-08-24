@@ -1,0 +1,12 @@
+#!/bin/sh
+set -eu
+
+case "$0" in
+    */*) self=$0 ;;
+    *) self=$(command -v "$0") ;;
+esac
+self=$(readlink -f -- "$self")
+root=$(CDPATH= cd -- "$(dirname -- "$self")/.." && pwd -P)
+exec "$root/lib/cclsh-loader" \
+    --library-path "$root/lib" \
+    "$root/libexec/cclsh-fast-kernel" "$@"
