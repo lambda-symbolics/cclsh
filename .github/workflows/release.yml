@@ -21,13 +21,24 @@ jobs:
         run: nix flake check --no-build
       - name: Build and verify release archive
         run: |
-          set -eu
+          set -euo pipefail
           version=${GITHUB_REF_NAME#v}
           test "$GITHUB_REF_NAME" = "v$version"
           grep -Fx ":version \"$version\"" cclsh.asd
           grep -Fx "(defparameter *cclsh-version* \"$version\"" source/main.lisp
 
-          nix build .#release-artifact --out-link result --print-build-logs
+          if ! nix build .#release-artifact --out-link result \
+              --print-build-logs 2>&1 | tee release-build.log
+          then
+            {
+              echo '## Release build failed'
+              echo
+              echo '```text'
+              tail -n 200 release-build.log
+              echo '```'
+            } >>"$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
           archive_name="cclsh-$version-linux-x86_64.tar.xz"
           test -f "result/$archive_name"
           mkdir dist
