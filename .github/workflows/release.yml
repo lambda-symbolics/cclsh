@@ -6,6 +6,7 @@ on:
       - "v*"
 
 permissions:
+  checks: write
   contents: write
 
 jobs:
@@ -48,6 +49,36 @@ jobs:
             sha256sum "$archive_name" >"$archive_name.sha256"
           )
           scripts/verify-release-artifact "dist/$archive_name"
+      - name: Publish failed build log
+        if: failure()
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const fs = require('fs');
+            const log = fs.existsSync('release-build.log')
+              ? fs.readFileSync('release-build.log', 'utf8')
+                  .trimEnd().split('\n').slice(-200).join('\n')
+              : 'The release build did not start.';
+            const jobs = await github.rest.actions.listJobsForWorkflowRun({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              run_id: context.runId
+            });
+            const job = jobs.data.jobs.find(
+              ({name}) => name === process.env.GITHUB_JOB);
+            if (!job) {
+              core.setFailed('could not find the current release job');
+              return;
+            }
+            await github.rest.checks.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              check_run_id: job.id,
+              output: {
+                title: 'Release build failed',
+                summary: `\`\`\`text\n${log}\n\`\`\``
+              }
+            });
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
