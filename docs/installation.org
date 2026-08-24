@@ -38,6 +38,25 @@ The flake rebuilds CCL 1.13 from the exact downstream CCL commits and editor
 dependency revisions recorded in =dependencies.lock=. It installs an ordinary
 user command; it does not edit =/etc/shells= or change an account's login shell.
 
+* Linux x86-64 release archive
+
+Each GitHub release includes =cclsh-VERSION-linux-x86_64.tar.xz= and its
+=.sha256= checksum. The archive is self-contained: it contains CCLSH's matched
+kernel and image plus the runtime they need, so Nix is not required.
+
+#+begin_src sh
+sha256sum -c cclsh-VERSION-linux-x86_64.tar.xz.sha256
+tar -xJf cclsh-VERSION-linux-x86_64.tar.xz
+mkdir -p ~/.local/opt
+mv cclsh-VERSION-linux-x86_64 ~/.local/opt/cclsh
+~/.local/opt/cclsh/bin/cclsh --version
+#+end_src
+
+Keep =bin=, =lib= and =libexec= together. To make it available as =cclsh=,
+add =~/.local/opt/cclsh/bin= to =PATH= or create a symlink in a personal bin
+directory. The optional =cclsh-fast= launcher is included but remains
+experimental.
+
 ** Quicklisp state
 
 A saved image uses =~/quicklisp= when it already exists. Otherwise cclsh copies

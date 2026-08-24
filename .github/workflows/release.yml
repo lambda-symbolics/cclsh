@@ -11,19 +11,47 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - uses: DeterminateSystems/nix-installer-action@main
       - name: Verify release metadata
         run: nix flake check --no-build
-      - name: Create GitHub release
+      - name: Build and verify release archive
+        run: |
+          set -eu
+          version=${GITHUB_REF_NAME#v}
+          test "$GITHUB_REF_NAME" = "v$version"
+          grep -Fx ":version \"$version\"" cclsh.asd
+          grep -Fx "(defparameter *cclsh-version* \"$version\"" source/main.lisp
+
+          nix build .#release-artifact --out-link result --print-build-logs
+          archive_name="cclsh-$version-linux-x86_64.tar.xz"
+          test -f "result/$archive_name"
+          mkdir dist
+          cp "result/$archive_name" "dist/$archive_name"
+          (
+            cd dist
+            sha256sum "$archive_name" >"$archive_name.sha256"
+          )
+          scripts/verify-release-artifact "dist/$archive_name"
+      - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           version=${GITHUB_REF_NAME#v}
-          gh release create "$GITHUB_REF_NAME" \
-            --repo "$GITHUB_REPOSITORY" \
-            --verify-tag \
-            --generate-notes \
-            --title "cclsh $version"
+          if gh release view "$GITHUB_REF_NAME" \
+              --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1
+          then
+            gh release upload "$GITHUB_REF_NAME" dist/* \
+              --repo "$GITHUB_REPOSITORY" \
+              --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" dist/* \
+              --repo "$GITHUB_REPOSITORY" \
+              --verify-tag \
+              --generate-notes \
+              --title "cclsh $version"
+          fi

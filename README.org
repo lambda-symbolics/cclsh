@@ -41,6 +41,11 @@ cclsh --version
 
 From a checkout, use =nix run .= or =nix profile install .#cclsh=.
 
+Linux x86-64 release archives are also available on the
+[[https://github.com/lambda-symbolics/cclsh/releases][GitHub Releases page]].
+They include the matched CCL kernel, image and runtime, and do not require
+Nix.
+
 See [[file:docs/installation.org][Installing cclsh]] for Quicklisp state, source
 builds, local installation and the guarded shared login-shell procedure.
 
