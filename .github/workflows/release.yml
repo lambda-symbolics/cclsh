@@ -27,6 +27,7 @@ jobs:
           test "$GITHUB_REF_NAME" = "v$version"
           grep -Eq "^[[:space:]]*:version \"$version\"$" cclsh.asd
           grep -Fx "(defparameter *cclsh-version* \"$version\"" source/main.lisp
+          test -s "release-notes/v$version.md"
 
           if ! nix build .#release-artifact --out-link result \
               --print-build-logs 2>&1 | tee release-build.log
@@ -84,6 +85,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           version=${GITHUB_REF_NAME#v}
+          notes_file="release-notes/v$version.md"
           if gh release view "$GITHUB_REF_NAME" \
               --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1
           then
@@ -94,6 +96,6 @@ jobs:
             gh release create "$GITHUB_REF_NAME" dist/* \
               --repo "$GITHUB_REPOSITORY" \
               --verify-tag \
-              --generate-notes \
+              --notes-file "$notes_file" \
               --title "cclsh $version"
           fi
