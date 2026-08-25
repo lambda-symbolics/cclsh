@@ -12,6 +12,9 @@
 (defparameter *cclsh-version* "1.5.0"
   "The cclsh version reported by --version.")
 
+(defconstant +launcher-path-variable+ "CCLSH_LAUNCHER_PATH"
+  "Environment variable used by a release launcher to preserve its path.")
+
 (defvar *cclsh-build-commit* nil
   "Git commit the running binary was built from, stamped into the
    image by scripts/build.lisp. NIL in plain REPL sessions.")
@@ -387,16 +390,25 @@
            (ignore-errors
              (equal (truename path) (truename executable-path))))))
 
+(defun shell--absolute-path-p (path)
+  "True when PATH is a nonempty absolute Unix pathname."
+  (and path
+       (plusp (length path))
+       (char= (char path 0) #\/)))
+
 (defun shell--invocation-path
     (&key
        (arguments *command-line-argument-list*)
+       (launcher-path (getenv +launcher-path-variable+))
        (environment-shell (getenv "SHELL"))
        (executable-path (shell--executable-path)))
-  "Stable shell path from argv[0], preserving an installed symlink.
+  "Stable shell path from a release launcher or argv[0].
    Traditional login programs replace argv[0] with a dash-prefixed name;
    in that case use an absolute SHELL only when it names this executable."
   (let ((argument (first arguments)))
-    (cond ((and argument
+    (cond ((shell--absolute-path-p launcher-path)
+           launcher-path)
+          ((and argument
                 (plusp (length argument))
                 (char= (char argument 0) #\/)
                 (shell--path-references-executable-p

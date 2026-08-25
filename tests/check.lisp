@@ -750,6 +750,20 @@
               :arguments '("cclsh" "-c" "exit 0")
               :executable-path "/usr/local/bin/cclsh"))
 
+(check-equal "release launcher path survives the dynamic loader"
+             "/usr/local/bin/cclsh"
+             (cclsh::shell--invocation-path
+              :arguments '("/opt/cclsh/lib/cclsh-loader" "-c" "exit 0")
+              :launcher-path "/usr/local/bin/cclsh"
+              :executable-path "/opt/cclsh/lib/cclsh-loader"))
+
+(check-equal "relative release launcher path is ignored"
+             nil
+             (cclsh::shell--invocation-path
+              :arguments '("cclsh" "-c" "exit 0")
+              :launcher-path "cclsh"
+              :executable-path "/usr/local/bin/cclsh"))
+
 (check-equal "login argv uses the account's stable shell path"
              "/usr/local/bin/cclsh"
              (cclsh::shell--invocation-path

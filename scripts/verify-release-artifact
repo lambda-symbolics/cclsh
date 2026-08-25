@@ -81,6 +81,12 @@ if [ "$linked_version_output" != "$version_output" ]; then
     echo "cclsh release artifact: cclsh symlink differs" >&2
     exit 65
 fi
+shell_path="$temporary/bin/cclsh"
+shell_value=$(SHELL="$shell_path" "$shell_path" -c 'echo $SHELL')
+if [ "$shell_value" != "$shell_path" ]; then
+    echo "cclsh release artifact: launcher did not preserve SHELL" >&2
+    exit 65
+fi
 "$root/bin/cclsh" -c 'exit 0'
 "$root/bin/cclsh" -c \
     '(when cclsh::*packaged-quicklisp-template*

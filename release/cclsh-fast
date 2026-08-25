@@ -2,11 +2,16 @@
 set -eu
 
 case "$0" in
-    */*) self=$0 ;;
-    *) self=$(command -v "$0") ;;
+    */*) invocation=$0 ;;
+    *) invocation=$(command -v "$0") ;;
 esac
-self=$(readlink -f -- "$self")
+case "$invocation" in
+    /*) ;;
+    *) invocation="$(CDPATH= cd -- "$(dirname -- "$invocation")" && pwd -P)/$(basename -- "$invocation")" ;;
+esac
+self=$(readlink -f -- "$invocation")
 root=$(CDPATH= cd -- "$(dirname -- "$self")/.." && pwd -P)
+export CCLSH_LAUNCHER_PATH="$invocation"
 exec "$root/lib/cclsh-loader" \
     --library-path "$root/lib" \
     "$root/libexec/cclsh-fast-kernel" "$@"
