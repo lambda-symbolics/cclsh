@@ -471,6 +471,10 @@ not. ASDF source-registry discovery remains lazy, so the first system lookup
 may scan configured project trees but ordinary shell startup does not. The
 flake does not edit /etc/shells or run chsh.
 
+For SBCL source use on macOS or Linux, install Quicklisp and run
+scripts/cclsh-sbcl from a checkout with its sibling dependencies; see
+docs/installation.org. The SBCL runner has no saved image or cclsh-fast mode.
+
 Source checks can use stock CCL. For a standalone saved image, select the exact
 downstream CCL revision:
 
@@ -539,8 +543,9 @@ remain script data. Use -- before a dash-prefixed script path:
 
   cclsh -- -provision.sh.lisp alpha
 
-Keep the executable basename cclsh. The patched CCL kernel recognizes that
-name when preserving command and script arguments.
+The saved CCL program keeps the executable basename cclsh so its patched
+kernel recognizes and preserves command and script arguments. The SBCL source
+launcher receives its arguments through its explicit -- boundary.
 
 The process exit code is the last status, or the argument of exit. -c
 is what ssh invokes, so remote commands skip user state. Programs already
@@ -611,7 +616,7 @@ Emergency access past broken user state:
 (defun manual--print-overview ()
   "Print the manual overview and section list."
   (format t "~a~%~%" (manual--heading "cclsh"))
-  (format t "A system shell inside a live Clozure CL image. One rule: a line~%~
+  (format t "A system shell inside a live Common Lisp session. One rule: a line~%~
              starting with ( is Lisp, anything else is a command. The sections~%~
              below cover what is special; the rest is ordinary Common Lisp.~%~%")
   (dolist (section *manual-sections*)

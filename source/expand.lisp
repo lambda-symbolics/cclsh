@@ -197,7 +197,10 @@ implicit directory change is safe only when the final command has one word."
                          (concatenate 'string directory "/"))))
          (wild    (merge-pathnames (make-pathname :name ':wild :type ':wild) base))
          (entries (ignore-errors
-                    (directory wild :directories t :files t :follow-links nil))))
+                    #+ccl
+                    (directory wild :directories t :files t :follow-links nil)
+                    #+sbcl
+                    (directory wild))))
     (let ((files          nil)
           (subdirectories nil))
       (dolist (entry entries)

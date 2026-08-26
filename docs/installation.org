@@ -1,8 +1,15 @@
 #+TITLE: Installing cclsh
 #+AUTHOR: Lukáš Hozda
 
-cclsh supports Linux x86-64. The Nix flake is the recommended installation;
-source builds are intended for development and shared login-shell deployments.
+cclsh has two supported host-Lisp paths:
+
+- CCL 1.13 on Linux x86-64 provides the Nix package, release archives, saved
+  image builds, the prewarmed launcher and the shared login-shell procedure.
+- SBCL on macOS or Linux provides a portable source launcher for normal
+  interactive use, scripts, pipelines and Lisp development.
+
+The Nix flake is the recommended Linux installation. Source launchers are
+useful for development and for hosts where the CCL image is not available.
 
 cclsh is not a POSIX shell. Use it as an ordinary shell before making it a
 login shell, and keep a working recovery shell available.
@@ -74,7 +81,74 @@ Interactive sessions and configured =-lc=/=-ic= commands load the selected
 Quicklisp home's =local-init= files. Plain =-c= commands, scripts, piped input
 and safe mode do not execute them.
 
-* Build from source
+* Run from source
+
+** SBCL on macOS or Linux
+
+The =scripts/cclsh-sbcl= launcher runs the checkout with SBCL. It uses
+Quicklisp for the small host layer (=cffi=, =bordeaux-threads= and
+=trivial-gray-streams=), retains cclsh's normal syntax and user startup file,
+and does not require a C compiler or a saved image.
+
+On macOS, install SBCL with Homebrew; Linux distributions normally package it:
+
+#+begin_src sh
+brew install sbcl                    # macOS
+# or: sudo apt install sbcl          # Debian/Ubuntu
+#+end_src
+
+Install Quicklisp once if =~/quicklisp/setup.lisp= does not already exist:
+
+#+begin_src sh
+curl -O https://beta.quicklisp.org/quicklisp.lisp
+sbcl --noinform --non-interactive \
+  --load quicklisp.lisp \
+  --eval '(quicklisp-quickstart:install)' \
+  --eval '(uiop:quit)'
+#+end_src
+
+Clone cclsh and its locked sibling source dependencies. The same layout works
+for the CCL source path below:
+
+#+begin_src sh
+git clone https://github.com/lambda-symbolics/cclsh.git cclsh
+cd cclsh
+git clone https://github.com/lambda-symbolics/clinedi.git ../clinedi
+git clone https://github.com/lambda-symbolics/structlisp.git ../structlisp
+git clone https://github.com/lambda-symbolics/cl-colorist.git ../cl-colorist
+git clone https://github.com/lambda-symbolics/colorlisp.git ../colorlisp
+git clone https://github.com/lambda-symbolics/colordiff.git ../colordiff
+for dependency in clinedi structlisp cl-colorist colorlisp colordiff; do
+    commit=$(sed -n "s/^$dependency=//p" dependencies.lock)
+    git -C "../$dependency" checkout --detach "$commit"
+done
+scripts/cclsh-sbcl --version
+scripts/cclsh-sbcl
+make sbcl-check
+#+end_src
+
+The launcher deliberately starts SBCL without its own user or system init
+files, then loads the selected Quicklisp setup and cclsh. This avoids accidental
+interference from unrelated Lisp projects. Use =CCLSH_SBCL= to select a
+specific SBCL executable and =CCLSH_QUICKLISP_SETUP= for a nonstandard
+Quicklisp location. The existing =CCLSH_*_SOURCE= dependency overrides also
+apply when a sibling checkout lives elsewhere.
+
+To expose this checkout as =cclsh= while keeping its sibling dependencies in
+place, symlink the launcher into a personal bin directory:
+
+#+begin_src sh
+mkdir -p ~/.local/bin
+ln -sf "$PWD/scripts/cclsh-sbcl" ~/.local/bin/cclsh
+#+end_src
+
+The SBCL launcher is a source runner, not a saved application: it has no
+=cclsh-fast= mode and is not the supported target for =/etc/shells= or a login
+shell. Its =edit= command cannot yet use CCL's source-note database. Use the
+CCL distribution below when those deployment modes or source-aware =edit=
+matter.
+
+** CCL on Linux x86-64
 
 ** Requirements
 
@@ -90,24 +164,26 @@ command.
 
 ** Fetch source dependencies
 
-Clone Clinedi, cl-colorist, ColorLisp and Colordiff beside the cclsh checkout,
-then select their locked revisions:
+Clone Clinedi, StructLisp, cl-colorist, ColorLisp and Colordiff beside the
+cclsh checkout, then select their locked revisions:
 
 #+begin_src sh
 git clone https://github.com/lambda-symbolics/clinedi.git ../clinedi
+git clone https://github.com/lambda-symbolics/structlisp.git ../structlisp
 git clone https://github.com/lambda-symbolics/cl-colorist.git ../cl-colorist
 git clone https://github.com/lambda-symbolics/colorlisp.git ../colorlisp
 git clone https://github.com/lambda-symbolics/colordiff.git ../colordiff
-for dependency in clinedi cl-colorist colorlisp colordiff; do
+for dependency in clinedi structlisp cl-colorist colorlisp colordiff; do
     commit=$(sed -n "s/^$dependency=//p" dependencies.lock)
     git -C "../$dependency" checkout --detach "$commit"
 done
 #+end_src
 
-Set =CCLSH_CLINEDI_SOURCE=, =CCLSH_CL_COLORIST_SOURCE=,
-=CCLSH_COLORLISP_SOURCE= or =CCLSH_COLORDIFF_SOURCE= when a checkout is not at
-its default sibling path. The build refuses a non-Git checkout, local
-modifications or a revision mismatch.
+Set =CCLSH_CLINEDI_SOURCE=, =CCLSH_STRUCTLISP_SOURCE=,
+=CCLSH_CL_COLORIST_SOURCE=, =CCLSH_COLORLISP_SOURCE= or
+=CCLSH_COLORDIFF_SOURCE= when a checkout is not at its default sibling path.
+The build refuses a non-Git checkout, local modifications or a revision
+mismatch.
 
 For interactive Quicklisp development, register the directory containing the
 checkouts in =~/quicklisp/local-init/common-lisp.lisp=. Replace the example
@@ -121,7 +197,7 @@ path with your checkout parent:
 #+end_src
 
 Set =CCLSH_QUICKLISP_SETUP= when Quicklisp's =setup.lisp= is elsewhere. Saved
-images include Quicklisp and the four locked source dependencies, but the build
+images include Quicklisp and the five locked source dependencies, but the build
 copies only an allowlist of Quicklisp metadata. Personal local init files,
 proxy settings, caches and downloaded systems do not enter the image.
 

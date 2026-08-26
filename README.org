@@ -1,11 +1,12 @@
 #+TITLE: cclsh
 #+AUTHOR: Lukáš Hozda
 
-A system shell running inside Clozure CL. Ordinary Unix commands and Common
+A system shell running inside Common Lisp. Ordinary Unix commands and Common
 Lisp forms share one live image, so the boundary between shell use and Lisp is
 small and explicit.
 
-cclsh targets Linux x86-64, but works elsewhere too.
+The complete saved-image distribution targets CCL on Linux x86-64. The normal
+source launcher also supports SBCL on macOS and Linux.
 
 It is not a POSIX shell: command strings, scripts, pipelines and redirection use cclsh syntax.
 
@@ -46,8 +47,9 @@ Linux x86-64 release archives are also available on the
 They include the matched CCL kernel, image and runtime, and do not require
 Nix.
 
-See [[file:docs/installation.org][Installing cclsh]] for Quicklisp state, source
-builds, local installation and the guarded shared login-shell procedure.
+See [[file:docs/installation.org][Installing cclsh]] for Quicklisp state, CCL
+and SBCL source launchers, local installation and the guarded shared
+login-shell procedure.
 
 * Shell and Lisp
 
@@ -78,7 +80,7 @@ both command mode and Lisp.
 - startup configuration in =~/.config/cclsh/startup.lisp=
 - command strings, scripts, shebang scripts and piped input
 - optional zoxide integration with =z= and =zi=
-- optional experimental =cclsh-fast= prewarmed interactive launcher
+- optional experimental =cclsh-fast= prewarmed interactive launcher (CCL only)
 
 * Documentation
 
@@ -96,11 +98,18 @@ from another shell. Use =cclsh help SECTION= for a specific topic.
 
 * Development
 
-Stock CCL 1.13 is sufficient for regression checks and unsaved REPL
+Stock CCL 1.13 is sufficient for the full regression suite and unsaved REPL
 development:
 
 #+begin_src sh
 scripts/check
+#+end_src
+
+SBCL runs the portable source launcher and its focused smoke suite:
+
+#+begin_src sh
+scripts/cclsh-sbcl
+make sbcl-check
 #+end_src
 
 Standalone image builds require the downstream CCL changes documented in the

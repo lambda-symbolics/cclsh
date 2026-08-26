@@ -8,7 +8,7 @@ CCL ?= ccl
 CCL_IMAGE ?=
 CCL_SOURCE ?= ../ccl
 
-.PHONY: build fast system-shell-build login-build ccl-kernel check integration-check install install-fast install-system-shell install-login-shell
+.PHONY: build fast system-shell-build login-build ccl-kernel check sbcl-check integration-check install install-fast install-system-shell install-login-shell
 
 build:
 	CCLSH_CCL="$(CCL)" CCLSH_CCL_IMAGE="$(CCL_IMAGE)" scripts/build
@@ -28,6 +28,9 @@ ccl-kernel:
 
 check:
 	CCLSH_CCL="$(CCL)" CCLSH_CCL_IMAGE="$(CCL_IMAGE)" scripts/check
+
+sbcl-check:
+	CCLSH_SBCL="$(SBCL)" scripts/sbcl-check
 
 integration-check:
 	@set -e; \

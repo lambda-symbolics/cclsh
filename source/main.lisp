@@ -12,7 +12,7 @@
 (defparameter *cclsh-version* "1.5.1"
   "The cclsh version reported by --version.")
 
-(defconstant +launcher-path-variable+ "CCLSH_LAUNCHER_PATH"
+(defparameter +launcher-path-variable+ "CCLSH_LAUNCHER_PATH"
   "Environment variable used by a release launcher to preserve its path.")
 
 (defvar *cclsh-build-commit* nil
@@ -71,16 +71,20 @@
 
 (defun terminal-encoding-setup ()
   "Make UTF-8 the default and switch every terminal stream to it."
-  (setf ccl:*default-file-character-encoding* ':utf-8
-        ccl:*default-external-format*
-        '(:character-encoding :utf-8 :line-termination :unix)
-        ccl:*terminal-character-encoding-name* ':utf-8)
-  (let ((format (make-external-format :character-encoding ':utf-8
-                                      :line-termination   ':unix)))
-    (dolist (stream (terminal--encoding-leaves
-                     *terminal-io* *standard-input*
-                     *standard-output* *error-output*))
-      (setf (stream-external-format stream) format)))
+  #+ccl
+  (progn
+    (setf ccl:*default-file-character-encoding* ':utf-8
+          ccl:*default-external-format*
+          '(:character-encoding :utf-8 :line-termination :unix)
+          ccl:*terminal-character-encoding-name* ':utf-8)
+    (let ((format (make-external-format :character-encoding ':utf-8
+                                        :line-termination   ':unix)))
+      (dolist (stream (terminal--encoding-leaves
+                       *terminal-io* *standard-input*
+                       *standard-output* *error-output*))
+        (setf (stream-external-format stream) format))))
+  #+sbcl
+  (setf sb-ext:*default-external-format* :utf-8)
   (values))
 
 (defun environment-setup ()
@@ -396,9 +400,22 @@
        (plusp (length path))
        (char= (char path 0) #\/)))
 
+(defun shell--host-arguments ()
+  "Return cclsh's executable path followed by its user arguments."
+  #+ccl
+  ccl:*command-line-argument-list*
+  #+sbcl
+  (let ((arguments (uiop:command-line-arguments)))
+    (when (equal (first arguments) "--")
+      (setf arguments (rest arguments)))
+    (cons (or (getenv +launcher-path-variable+)
+              (first sb-ext:*posix-argv*)
+              "cclsh")
+          arguments)))
+
 (defun shell--invocation-path
     (&key
-       (arguments *command-line-argument-list*)
+       (arguments (shell--host-arguments))
        (launcher-path (getenv +launcher-path-variable+))
        (environment-shell (getenv "SHELL"))
        (executable-path (shell--executable-path)))
@@ -426,13 +443,11 @@
           (t
            nil))))
 
+#+ccl
 (defun shell-toplevel ()
-  "Entry point for the saved cclsh application. Sets SHELL to the
-   stable invocation path, or the resolved running binary as fallback,
-   so $SHELL callers land back in cclsh. A REPL session through MAIN
-   leaves SHELL alone."
+  "Entry point for the saved cclsh application."
   (let ((worker-descriptor (getenv +prewarm-worker-fd-variable+))
-        (arguments (rest *command-line-argument-list*)))
+        (arguments (rest (shell--host-arguments))))
     (if (and worker-descriptor
              (equal arguments (list +prewarm-worker-argument+)))
         (progn
@@ -463,3 +478,21 @@
             (serious-condition (condition)
               (dispatch-report-error condition)
               (shell-quit 70)))))))
+
+#+sbcl
+(defun shell-toplevel ()
+  "Run the SBCL source launcher with the normal cclsh argument protocol."
+  (let ((arguments (rest (shell--host-arguments))))
+    (with-terminal-control-signals
+      (handler-case
+          (progn
+            (let ((executable
+                    (or (shell--invocation-path)
+                        (shell--executable-path))))
+              (when executable
+                (setenv "SHELL" executable)))
+            (shell--process-arguments arguments)
+            (main))
+        (serious-condition (condition)
+          (dispatch-report-error condition)
+          (shell-quit 70))))))

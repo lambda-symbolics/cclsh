@@ -1,0 +1,26 @@
+#!/bin/sh
+# Run this checkout through SBCL.  The Lisp loader finds the checkout from
+# this script's resolved path, so the caller's working directory is preserved.
+set -eu
+
+resolve_path()
+{
+    target=$1
+    while [ -L "$target" ]; do
+        directory=$(CDPATH= cd -P "$(dirname "$target")" && pwd)
+        link=$(readlink "$target")
+        case "$link" in
+            /*) target=$link ;;
+            *) target=$directory/$link ;;
+        esac
+    done
+    directory=$(CDPATH= cd -P "$(dirname "$target")" && pwd)
+    printf '%s/%s\n' "$directory" "$(basename "$target")"
+}
+
+launcher=$(resolve_path "$0")
+script_directory=$(dirname "$launcher")
+
+export CCLSH_LAUNCHER_PATH=$launcher
+exec "${CCLSH_SBCL:-sbcl}" --noinform --no-userinit --no-sysinit --script \
+    "$script_directory/cclsh-sbcl.lisp" -- "$@"

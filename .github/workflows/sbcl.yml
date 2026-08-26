@@ -1,0 +1,40 @@
+name: SBCL source launcher
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install SBCL and Quicklisp
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --yes sbcl curl
+          curl --fail --location --output quicklisp.lisp \
+            https://beta.quicklisp.org/quicklisp.lisp
+          sbcl --noinform --non-interactive \
+            --load quicklisp.lisp \
+            --eval '(quicklisp-quickstart:install)' \
+            --eval '(uiop:quit)'
+      - name: Fetch locked source dependencies
+        run: |
+          set -euo pipefail
+          for dependency in clinedi structlisp cl-colorist colorlisp colordiff
+          do
+            git clone "https://github.com/lambda-symbolics/$dependency.git" \
+              "../$dependency"
+            commit=$(sed -n "s/^$dependency=//p" dependencies.lock)
+            git -C "../$dependency" checkout --detach "$commit"
+          done
+      - name: Exercise the SBCL launcher
+        run: make sbcl-check

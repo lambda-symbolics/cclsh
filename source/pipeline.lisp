@@ -170,6 +170,7 @@ PRINC-TO-STRING, preserving the former scalar argument behavior."
   input-fd
   output-fd
   error-fd
+  close-fds
   input-demand)
 
 (defvar *pipeline-task-starter* #'ccl:process-run-function
@@ -177,7 +178,8 @@ PRINC-TO-STRING, preserving the former scalar argument behavior."
    inject a partial thread-start failure.")
 
 (defclass pipeline-demand-input-stream
-    (ccl:fundamental-character-input-stream)
+    (#+ccl ccl:fundamental-character-input-stream
+     #+sbcl trivial-gray-streams:fundamental-character-input-stream)
   ((input
     :initarg :input
     :reader pipeline-demand-input)
@@ -201,28 +203,71 @@ PRINC-TO-STRING, preserving the former scalar argument behavior."
       (close output)))
   (values))
 
+#+ccl
 (defmethod ccl:stream-read-char ((stream pipeline-demand-input-stream))
   (pipeline--demand-input-start stream)
   (read-char (pipeline-demand-input stream) nil ':eof))
 
+#+sbcl
+(defmethod trivial-gray-streams:stream-read-char
+    ((stream pipeline-demand-input-stream))
+  (pipeline--demand-input-start stream)
+  (read-char (pipeline-demand-input stream) nil ':eof))
+
+#+ccl
 (defmethod ccl:stream-read-char-no-hang
     ((stream pipeline-demand-input-stream))
   (pipeline--demand-input-start stream)
   (read-char-no-hang (pipeline-demand-input stream) nil ':eof))
 
+#+sbcl
+(defmethod trivial-gray-streams:stream-read-char-no-hang
+    ((stream pipeline-demand-input-stream))
+  (pipeline--demand-input-start stream)
+  (read-char-no-hang (pipeline-demand-input stream) nil ':eof))
+
+#+ccl
 (defmethod ccl:stream-unread-char
     ((stream pipeline-demand-input-stream) character)
   (unread-char character (pipeline-demand-input stream)))
 
+#+sbcl
+(defmethod trivial-gray-streams:stream-unread-char
+    ((stream pipeline-demand-input-stream) character)
+  (unread-char character (pipeline-demand-input stream)))
+
+#+ccl
 (defmethod ccl:stream-listen ((stream pipeline-demand-input-stream))
   (pipeline--demand-input-start stream)
   (listen (pipeline-demand-input stream)))
 
+#+sbcl
+(defmethod trivial-gray-streams:stream-listen
+    ((stream pipeline-demand-input-stream))
+  (pipeline--demand-input-start stream)
+  (listen (pipeline-demand-input stream)))
+
+#+ccl
 (defmethod ccl:stream-clear-input ((stream pipeline-demand-input-stream))
   (pipeline--demand-input-start stream)
   (clear-input (pipeline-demand-input stream)))
 
+#+sbcl
+(defmethod trivial-gray-streams:stream-clear-input
+    ((stream pipeline-demand-input-stream))
+  (pipeline--demand-input-start stream)
+  (clear-input (pipeline-demand-input stream)))
+
+#+ccl
 (defmethod ccl:stream-read-line ((stream pipeline-demand-input-stream))
+  (pipeline--demand-input-start stream)
+  (multiple-value-bind (line missing-newline)
+      (read-line (pipeline-demand-input stream) nil nil)
+    (values line missing-newline)))
+
+#+sbcl
+(defmethod trivial-gray-streams:stream-read-line
+    ((stream pipeline-demand-input-stream))
   (pipeline--demand-input-start stream)
   (multiple-value-bind (line missing-newline)
       (read-line (pipeline-demand-input stream) nil nil)
@@ -688,6 +733,8 @@ has started, so an asynchronous task abort cannot leave an unowned child."
                                  :fd0 (pipeline-run-context-input-fd context)
                                  :fd1 (pipeline-run-context-output-fd context)
                                  :fd2 (pipeline-run-context-error-fd context)
+                                 :close-fds
+                                 (pipeline-run-context-close-fds context)
                                  :event event))
                           (shell-process-start-monitor
                            (first process-cell) event))))))
@@ -745,7 +792,8 @@ has started, so an asynchronous task abort cannot leave an unowned child."
                                             error-output
                                             presentation-enabled
                                             package
-                                            argv)
+                                            argv
+                                            close-fds)
   "Create STAGE's gated builtin task and all of its UTF-8 streams."
   (let ((owners nil)
         (complete nil)
@@ -802,6 +850,7 @@ has started, so an asynchronous task abort cannot leave an unowned child."
                         :input-fd input-fd
                         :output-fd output-fd
                         :error-fd error-fd
+                        :close-fds close-fds
                         :input-demand input-demand))
                      (presentation-disabled
                        (or (/= (pipeline-stage-output-fd stage) 1)
@@ -1001,7 +1050,7 @@ has started, so an asynchronous task abort cannot leave an unowned child."
   (push process (pipeline-task-group-processes group))
   process)
 
-(defun pipeline--spawn-one (path arguments group &key fd0 fd1 fd2)
+(defun pipeline--spawn-one (path arguments group &key fd0 fd1 fd2 close-fds)
   "Spawn one child into GROUP and remember it for cleanup."
   (let* ((process-group
            (or (pipeline-task-group-process-group group) 0))
@@ -1012,6 +1061,7 @@ has started, so an asynchronous task abort cannot leave an unowned child."
             :fd0 fd0
             :fd1 fd1
             :fd2 fd2
+            :close-fds close-fds
             :event (job-event (pipeline-task-group-job group)))))
     (unless (pipeline-task-group-process-group group)
       (setf (pipeline-task-group-process-group group)
@@ -1026,7 +1076,8 @@ has started, so an asynchronous task abort cannot leave an unowned child."
            (pipeline-plan-sentinel-path plan) nil group
            :fd0 (pipeline-plan-sentinel-read-fd plan)
            :fd1 (pipeline-plan-sentinel-null-fd plan)
-           :fd2 2))
+           :fd2 2
+           :close-fds (pipeline-plan-descriptors plan)))
     (when (pipeline-plan-tty-proxy-write-fd plan)
       (setf (pipeline-task-group-tty-proxy group)
             (pipeline--spawn-one
@@ -1038,7 +1089,8 @@ has started, so an asynchronous task abort cannot leave an unowned child."
              group
              :fd0 (pipeline-plan-tty-proxy-demand-read-fd plan)
              :fd1 (pipeline-plan-tty-proxy-write-fd plan)
-             :fd2 2))))
+             :fd2 2
+             :close-fds (pipeline-plan-descriptors plan)))))
   (dolist (stage (pipeline-plan-stages plan))
     (when (eq (pipeline-stage-kind stage) ':external)
       (pipeline--spawn-one
@@ -1047,7 +1099,8 @@ has started, so an asynchronous task abort cannot leave an unowned child."
        group
        :fd0 (pipeline-stage-input-fd stage)
        :fd1 (pipeline-stage-output-fd stage)
-       :fd2 (pipeline-stage-error-fd stage))))
+       :fd2 (pipeline-stage-error-fd stage)
+       :close-fds (pipeline-plan-descriptors plan))))
   (setf (pipeline-task-group-processes group)
         (nreverse (pipeline-task-group-processes group)))
   (values))
@@ -1088,7 +1141,8 @@ has started, so an asynchronous task abort cannot leave an unowned child."
                  :error-output error-output
                  :presentation-enabled presentation-enabled
                  :package package
-                 :argv argv)))
+                 :argv argv
+                 :close-fds (pipeline-plan-descriptors plan))))
           (setf (pipeline-stage-task stage) task)
           (unless first-task
             (setf first-task task))

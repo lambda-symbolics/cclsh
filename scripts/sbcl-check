@@ -1,0 +1,42 @@
+#!/bin/sh
+# Exercise the supported SBCL source-launcher boundary without user state.
+set -eu
+cd "$(dirname "$0")/.."
+
+sbcl_command=${CCLSH_SBCL:-sbcl}
+if ! command -v "$sbcl_command" >/dev/null 2>&1; then
+    echo "cclsh sbcl-check: SBCL executable not found: $sbcl_command" >&2
+    exit 1
+fi
+
+run_cclsh()
+{
+    CCLSH_SAFE=1 CCLSH_SBCL="$sbcl_command" scripts/cclsh-sbcl "$@"
+}
+
+expect_output()
+{
+    expected=$1
+    shift
+    actual=$(run_cclsh "$@")
+    if [ "$actual" != "$expected" ]; then
+        echo "cclsh sbcl-check: expected $expected, got $actual" >&2
+        exit 1
+    fi
+}
+
+version=$(run_cclsh --version)
+case "$version" in
+    'cclsh '*'(SBCL '*) ;;
+    *)
+        echo "cclsh sbcl-check: unexpected version output: $version" >&2
+        exit 1
+        ;;
+esac
+
+expect_output sbcl-cclsh-ok -c 'echo sbcl-cclsh-ok'
+expect_output 42 -c '(+ 40 2)'
+expect_output 'cba
+0' -c '(pipe (echo "abc") (rev))'
+expect_output '__SBCL_ARGV__("tests/sbcl-argv.sh.lisp" "--batch" "-R" "report")__' \
+    tests/sbcl-argv.sh.lisp --batch -R report

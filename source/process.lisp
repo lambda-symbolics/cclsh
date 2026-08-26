@@ -388,8 +388,9 @@ permissions for a newly created file, before the process umask."
    program "close child file descriptors"))
 
 (defun process--spawn-call (program arguments
-                            &key environment process-group fd0 fd1 fd2)
+                            &key environment process-group fd0 fd1 fd2 close-fds)
   "Perform POSIX-SPAWN and return the new pid."
+  (declare (ignore close-fds))
   (ccl:%stack-block ((attributes +process-foreign-structure-size+)
                      (actions +process-foreign-structure-size+)
                      (pid 4))
@@ -446,7 +447,8 @@ permissions for a newly created file, before the process umask."
                               (fd1 1)
                               (fd2 2)
                               (environment (environment-variables))
-                              event)
+                              event
+                              close-fds)
   "Spawn PROGRAM with UTF-8 ARGUMENTS and ENVIRONMENT.
 
 PROCESS-GROUP zero makes the child a group leader; a positive value
@@ -456,6 +458,7 @@ descriptors.  The caller retains ownership of those descriptors.
 The process is deliberately returned unmonitored.  Pipelines must
 spawn every stage before calling SHELL-PROCESS-START-MONITOR, keeping
 a fast first-stage leader unreaped while later stages join its group."
+  (declare (ignore close-fds))
   (let ((program (namestring program)))
     (process--make
      (process--spawn-call program

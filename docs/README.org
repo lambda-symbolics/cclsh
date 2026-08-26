@@ -2,8 +2,8 @@
 
 * User documentation
 
-- [[file:installation.org][Installation]] covers the Nix package, source builds and
-  shared login-shell deployment.
+- [[file:installation.org][Installation]] covers the Nix package, CCL and SBCL
+  source launchers, and shared login-shell deployment.
 - [[file:guide.org][User guide]] covers command syntax, Lisp evaluation, pipelines,
   custom commands, job control, completion, configuration and scripting.
 - [[file:../examples/startup.lisp][Example startup file]] is a safe base for

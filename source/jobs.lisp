@@ -724,9 +724,12 @@ pipeline job and inherits that stage's prepared standard descriptors.")
    image into an endless break loop."
   (terminal-finish-semantic-command status)
   (jobs--signal-exit)
+  #+ccl
   (quit status :error-handler (lambda (condition)
                                 (declare (ignore condition))
-                                (external-call "_exit" :int status))))
+                                (external-call "_exit" :int status)))
+  #+sbcl
+  (quit status))
 
 (defvar *jobs-exit-warned* nil
   "True right after the stopped jobs warning was printed, letting the

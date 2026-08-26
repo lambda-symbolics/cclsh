@@ -3,14 +3,26 @@
   :author "Lukáš Hozda"
   :license "ISC"
   :encoding :utf-8
-  :depends-on ("clinedi" "colordiff" "structlisp")
+  :depends-on ("clinedi" "colordiff" "structlisp"
+               #+sbcl "bordeaux-threads"
+               #+sbcl "trivial-gray-streams"
+               #+sbcl "cffi")
   :components ((:module "source"
                 :components
-                ((:file "package")
-                 (:file "environment" :depends-on ("package"))
-                 (:file "prewarm" :depends-on ("package" "environment"))
-                 (:file "terminal" :depends-on ("package"))
-                 (:file "process" :depends-on ("package" "environment"))
+                 (#+sbcl (:file "sbcl/compat")
+                 (:file "package" :depends-on (#+sbcl "sbcl/compat"))
+                 #+ccl (:file "environment" :depends-on ("package"))
+                 #+sbcl (:file "environment" :pathname "sbcl/environment"
+                          :depends-on ("package"))
+                 #+ccl (:file "prewarm" :depends-on ("package" "environment"))
+                 #+sbcl (:file "prewarm" :pathname "sbcl/prewarm"
+                          :depends-on ("package" "environment"))
+                 #+ccl (:file "terminal" :depends-on ("package"))
+                 #+sbcl (:file "terminal" :pathname "sbcl/terminal"
+                          :depends-on ("package"))
+                 #+ccl (:file "process" :depends-on ("package" "environment"))
+                 #+sbcl (:file "process" :pathname "sbcl/process"
+                          :depends-on ("package" "environment"))
                  (:file "lexer"    :depends-on ("package"))
                  (:file "command"  :depends-on ("package" "environment" "lexer"))
                  (:file "jobs"     :depends-on ("command" "terminal" "process"))
@@ -34,4 +46,4 @@
                   :depends-on ("dispatch" "line-editor" "prompt" "directory"
                                "builtins" "pipeline" "jobs" "manual"
                                "prewarm")))))
-  :description "A system shell running inside Clozure CL")
+  :description "A system shell running inside Common Lisp")

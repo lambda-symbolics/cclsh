@@ -12,6 +12,7 @@ keyword arguments. It may return a string verbatim or NIL to use the default.")
 
 (defun prompt--username ()
   "Return the operating-system name of the effective user."
+  #+ccl
   (let ((uid (external-call "geteuid" :unsigned-int)))
     (or (ignore-errors
           ;; getpwuid returns a passwd structure whose first field is pw_name.
@@ -24,7 +25,11 @@ keyword arguments. It may return a string verbatim or NIL to use the default.")
                 (let ((name (ccl:%get-ptr entry)))
                   (unless (ccl:%null-ptr-p name)
                     (ccl::%get-utf-8-cstring name)))))))
-        (format nil "~d" uid))))
+        (format nil "~d" uid)))
+  #+sbcl
+  (or (getenv "USER")
+      (getenv "LOGNAME")
+      "unknown"))
 
 (defun prompt--hostname ()
   "Return the operating-system hostname, with a stable fallback."

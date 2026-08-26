@@ -1,16 +1,18 @@
 #+TITLE: cclsh guide
 #+AUTHOR: Lukáš Hozda
 
-cclsh is a system shell in a live Clozure CL image. Unix commands and
-Common Lisp share one process. Pipelines and redirection are Lisp forms.
+cclsh is a system shell in a live Common Lisp session. Unix commands and
+Common Lisp share one process. The CCL release image runs on Linux x86-64;
+the source launcher also supports SBCL on macOS and Linux. Pipelines and
+redirection are Lisp forms.
 
 The built-in manual is available as =help= inside cclsh, or as =cclsh help=
 from another shell. =help SECTION= opens a topic.
 
 * Installation
 
-See [[file:installation.org][Installing cclsh]] for Nix, source builds and
-login-shell setup.
+See [[file:installation.org][Installing cclsh]] for Nix, CCL and SBCL source
+launchers, and login-shell setup.
 
 * How a line is interpreted
 
@@ -639,4 +641,3 @@ begins with a dash.
 
 The process exit code is the shell's last status, or the argument of
 =exit=.
-

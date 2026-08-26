@@ -124,7 +124,7 @@
            #:command-not-found-error
            #:command-argument-error
            #:pipeline-syntax-error)
-  (:documentation "A system shell running inside Clozure CL."))
+  (:documentation "A system shell running inside Common Lisp."))
 
 (defpackage #:cclsh-user
   (:use #:cl #:ccl #:cclsh)
