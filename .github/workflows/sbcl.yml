@@ -7,6 +7,7 @@ on:
       - master
 
 permissions:
+  checks: write
   contents: read
 
 jobs:
@@ -37,4 +38,36 @@ jobs:
             git -C "../$dependency" checkout --detach "$commit"
           done
       - name: Exercise the SBCL launcher
-        run: make sbcl-check
+        run: |
+          set -o pipefail
+          make sbcl-check 2>&1 | tee sbcl-check.log
+      - name: Publish failed smoke output
+        if: failure()
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const fs = require('fs');
+            const output = fs.existsSync('sbcl-check.log')
+              ? fs.readFileSync('sbcl-check.log', 'utf8')
+                  .trimEnd().split('\n').slice(-200).join('\n')
+              : 'The SBCL smoke check did not start.';
+            const jobs = await github.rest.actions.listJobsForWorkflowRun({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              run_id: context.runId
+            });
+            const job = jobs.data.jobs.find(
+              ({name}) => name === process.env.GITHUB_JOB);
+            if (!job) {
+              core.setFailed('could not find the current smoke-check job');
+              return;
+            }
+            await github.rest.checks.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              check_run_id: job.id,
+              output: {
+                title: 'SBCL smoke check failed',
+                summary: `\`\`\`text\n${output}\n\`\`\``
+              }
+            });
