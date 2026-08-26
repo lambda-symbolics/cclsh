@@ -34,17 +34,20 @@
 
 (defun call-with-muffled-warnings (function)
   "Run FUNCTION without Quicklisp and ASDF startup noise."
-  (let ((*compile-verbose* nil)
-        (*compile-print* nil)
-        (*load-verbose* nil)
-        (*load-print* nil))
-    (handler-bind
-        ((warning
-           (lambda (condition)
-             (declare (ignore condition))
-             (let ((restart (find-restart 'muffle-warning)))
-               (when restart (invoke-restart restart))))))
-      (funcall function))))
+  (let ((quiet-output (make-broadcast-stream)))
+    (let ((*standard-output* quiet-output)
+          (*trace-output* quiet-output)
+          (*compile-verbose* nil)
+          (*compile-print* nil)
+          (*load-verbose* nil)
+          (*load-print* nil))
+      (handler-bind
+          ((warning
+             (lambda (condition)
+               (declare (ignore condition))
+               (let ((restart (find-restart 'muffle-warning)))
+                 (when restart (invoke-restart restart))))))
+        (funcall function)))))
 
 (defun quicklisp-setup-pathname ()
   "Return the configured Quicklisp setup file pathname."
