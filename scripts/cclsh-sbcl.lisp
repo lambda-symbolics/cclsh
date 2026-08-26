@@ -109,11 +109,13 @@
 (let ((quickload (load-quicklisp))
       (dependencies (initialize-source-registry))
       (cclsh-asd (truename (merge-pathnames "cclsh.asd" *checkout-directory*))))
-  ;; These three host libraries provide the SBCL terminal, threading and Gray
-  ;; stream layers. Quicklisp downloads them on first use when necessary.
+  ;; These host libraries provide the SBCL terminal, threading and Gray stream
+  ;; layers, plus ColorLisp's isolated regular-expression dependency. Quicklisp
+  ;; downloads them on first use when necessary.
   (call-with-muffled-warnings
    (lambda ()
-     (funcall quickload '("cffi" "bordeaux-threads" "trivial-gray-streams")
+     (funcall quickload '("cffi" "bordeaux-threads" "trivial-gray-streams"
+                         "cl-ppcre")
               :silent t)))
   (call-with-muffled-warnings
    (lambda ()
