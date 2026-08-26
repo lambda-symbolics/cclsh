@@ -14,7 +14,7 @@
       system = "x86_64-linux";
       pkgs = import nixpkgs { inherit system; };
       lib = pkgs.lib;
-      version = "1.6.0";
+      version = "1.6.1";
       buildCommit = self.shortRev or self.dirtyShortRev or "unknown";
 
       dependencyLines = lib.splitString "\n" (builtins.readFile ./dependencies.lock);
