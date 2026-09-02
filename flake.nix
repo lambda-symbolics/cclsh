@@ -14,7 +14,7 @@
       system = "x86_64-linux";
       pkgs = import nixpkgs { inherit system; };
       lib = pkgs.lib;
-      version = "1.6.1";
+      version = "1.7.0";
       buildCommit = self.shortRev or self.dirtyShortRev or "unknown";
 
       dependencyLines = lib.splitString "\n" (builtins.readFile ./dependencies.lock);
@@ -48,7 +48,7 @@
         name = "clinedi-${builtins.substring 0 7 clinediRev}";
         url = "https://github.com/lambda-symbolics/clinedi.git";
         rev = clinediRev;
-        hash = "sha256-fHXs6jbP8pUAVFd6tczM22GD++3/jXmf/70YDYzWqL0=";
+        hash = "sha256-syceRls7XeP8X2mNUmtbUESSKtv0v7/2JVfWOXEzNx4=";
         leaveDotGit = true;
       };
 
