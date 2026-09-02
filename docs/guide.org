@@ -449,25 +449,25 @@ calls reuse that text.
 The built-in prompt shows =username@hostname (PACKAGE) directory $.
 See [[*Configuration]] to replace it.
 
-| Key                  | Action                              |
-|----------------------+-------------------------------------|
-| Tab                  | complete commands, files or symbols |
-| Left, C-b            | move cursor left                    |
-| Right, C-f           | move right or accept a suggestion   |
-| Ctrl-Left/Right      | move backward/forward by word       |
-| Up/Down, C-p/C-n     | older/newer matching history entry  |
-| Home/End, C-a/C-e    | start/end of line                   |
-| Backspace            | delete backward                     |
-| Delete               | delete forward                      |
-| C-d on text          | delete forward                      |
-| C-d on empty line    | exit the shell                      |
-| C-w, C-Backspace/C-h | delete word backward                |
-| C-k                  | kill to end of line                 |
-| C-u                  | discard the whole line              |
-| C-l                  | clear screen                        |
-| C-c                  | abort the current line              |
-| Alt/Ctrl-Enter       | insert a newline                    |
-| Shift-Enter          | same, when the terminal reports it  |
+| Key                  | Action                                |
+|----------------------+---------------------------------------|
+| Tab                  | complete commands, files or symbols   |
+| Left, C-b            | move cursor left                      |
+| Right, C-f           | move right or accept a suggestion     |
+| Ctrl-Left/Right      | move backward/forward by word segment |
+| Up/Down, C-p/C-n     | older/newer matching history entry    |
+| Home/End, C-a/C-e    | start/end of line                     |
+| Backspace            | delete backward                       |
+| Delete               | delete forward                        |
+| C-d on text          | delete forward                        |
+| C-d on empty line    | exit the shell                        |
+| C-w, C-Backspace/C-h | delete word backward                  |
+| C-k                  | kill to end of line                   |
+| C-u                  | discard the whole line                |
+| C-l                  | clear screen                          |
+| C-c                  | abort the current line                |
+| Alt/Ctrl-Enter       | insert a newline                      |
+| Shift-Enter          | same, when the terminal reports it    |
 
 At a slash-free command position, Tab completes command names and
 directories. For commands with =:arguments= it also completes the
@@ -526,7 +526,9 @@ Lisp mode:
 Interactive sessions load and write =~/.config/cclsh/history=
 (=XDG_CONFIG_HOME= is respected), one printed string per entry, capped
 at 10000 entries on load. Submitted non-blank lines are recorded.
-Immediate duplicates are skipped. 
+Consecutive duplicates in existing history files are collapsed on load, so
+partial history traversal does not repeat the same command.
+Immediate duplicates are skipped.
 
 * Configuration
 
@@ -578,6 +580,12 @@ semantic names such as =:left=, =:word-right=, =:kill-line= and
 #+begin_src lisp
 (clinedi:keymap-bind *line-editor-keymap* :word-right :right)
 #+end_src
+
+By default, Ctrl-Left, Ctrl-Right and Ctrl-Backspace treat =-=, =_=, =/=,
+=.= and =:= as word delimiters in addition to whitespace. Set
+=*line-editor-word-delimiter-mode-p*= to =nil= for whitespace-only word
+movement, or set =*line-editor-word-delimiters*= in =startup.lisp= to choose
+another character list.
 
 * Scripting
 

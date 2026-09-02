@@ -66,6 +66,6 @@
 ;; successful cd and install the z and zi commands.
 ;; (zoxide-setup)
 
-;; Clinedi exposes semantic event-to-command bindings. This example makes the
-;; decoded Ctrl-Right event move by one grapheme instead of one word.
+;; Ctrl-word editing is delimiter-aware by default. Clinedi also exposes
+;; semantic event-to-command bindings; this makes Ctrl-Right move one grapheme.
 ;; (clinedi:keymap-bind *line-editor-keymap* :word-right :right)

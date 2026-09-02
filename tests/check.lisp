@@ -573,6 +573,12 @@
 (check-equal "CCLSH owns a configurable Clinedi keymap"
              t
              (typep cclsh:*line-editor-keymap* 'clinedi:keymap))
+(check-equal "CCLSH enables delimiter-aware word editing"
+             t
+             cclsh:*line-editor-word-delimiter-mode-p*)
+(check-equal "CCLSH preserves Clinedi's default word delimiters"
+             clinedi:*default-word-delimiters*
+             cclsh:*line-editor-word-delimiters*)
 
 (check-equal "library load leaves terminal signal policy unclaimed"
              nil
@@ -748,6 +754,8 @@
              nil
              (cclsh::shell--invocation-path
               :arguments '("cclsh" "-c" "exit 0")
+              :launcher-path nil
+              :environment-shell nil
               :executable-path "/usr/local/bin/cclsh"))
 
 (check-equal "release launcher path survives the dynamic loader"
@@ -775,6 +783,7 @@
              nil
              (cclsh::shell--invocation-path
               :arguments '("-cclsh")
+              :launcher-path nil
               :environment-shell "/bin/sh"
               :executable-path "/usr/local/bin/cclsh"))
 
@@ -1431,15 +1440,15 @@
                      text
                      (and (= (fill-pointer cclsh::*history*) 1)
                           (aref cclsh::*history* 0)))
-         (let ((cclsh::*history-limit* 2))
+         (let ((cclsh::*history-limit* 4))
            (check-write-utf8-file
             (cclsh::history-file)
             (with-output-to-string (stream)
-              (dolist (entry '("old" "middle" "new"))
+              (dolist (entry '("old" "middle" "middle" "new" "new"))
                 (prin1 entry stream)
                 (terpri stream))))
            (cclsh::history-load)
-           (check-equal "history load retains only the newest bounded entries"
+           (check-equal "history load collapses consecutive duplicates"
                         '("middle" "new")
                         (coerce cclsh::*history* 'list)))
         (makunbound startup-symbol)

@@ -7,6 +7,17 @@
 Startup files may replace this with another CLINEDI:KEYMAP or change bindings
 with CLINEDI:KEYMAP-BIND. The default map is private to this CCLSH image.")
 
+(defparameter *line-editor-word-delimiter-mode-p* t
+  "Whether Ctrl-word movement and deletion split at word delimiters.
+
+CCLSH enables Clinedi's delimiter-aware word editing by default.")
+
+(defparameter *line-editor-word-delimiters*
+  (copy-list clinedi:*default-word-delimiters*)
+  "Characters that delimit Ctrl-word movement and deletion.
+
+The default is Clinedi's hyphen, underscore, slash, dot, and colon set.")
+
 
 (defun line-editor--accept-completion (candidate)
   "Return the accepted form of CANDIDATE for insertion into shell input.
@@ -33,6 +44,8 @@ with CLINEDI:KEYMAP-BIND. The default map is private to this CCLSH image.")
    :completion-accept-function #'line-editor--accept-completion
    :completion-arrangement :grid
    :suggestion-function #'history-suggestion
+   :word-delimiter-mode-p *line-editor-word-delimiter-mode-p*
+   :word-delimiters *line-editor-word-delimiters*
    :before-prompt-function
    (and semantic-prompt-p
         (lambda (stream)

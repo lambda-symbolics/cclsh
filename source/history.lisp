@@ -12,6 +12,11 @@
 (defvar *history-limit* 10000
   "Maximum number of history entries kept on load.")
 
+(defun history--immediate-duplicate-p (entry history)
+  "True when ENTRY repeats HISTORY's newest entry exactly."
+  (and (plusp (fill-pointer history))
+       (string= entry (aref history (1- (fill-pointer history))))))
+
 (defun config-directory ()
   "Return the cclsh configuration directory as a string with a trailing
    slash, honoring XDG_CONFIG_HOME."
@@ -68,8 +73,12 @@
                     when (stringp entry)
                       do (structlisp:deque-push-back entries entry)))))
       (error () nil))
+    ;; Older history files can contain repeats from earlier cclsh releases or
+    ;; concurrent shells. Keep nonconsecutive repeats, but collapse a run so
+    ;; partial history traversal never makes the user walk the same command.
     (loop for entry across (structlisp:deque->vector entries)
-          do (vector-push-extend entry *history*)))
+          unless (history--immediate-duplicate-p entry *history*)
+            do (vector-push-extend entry *history*)))
   (values))
 
 (defun history-append (entry)
@@ -77,9 +86,7 @@
    entries and immediate duplicates are skipped."
   (let ((trimmed (string-trim *whitespace-characters* entry)))
     (when (and (plusp (length trimmed))
-               (or (zerop (fill-pointer *history*))
-                   (not (string= entry (aref *history*
-                                             (1- (fill-pointer *history*)))))))
+               (not (history--immediate-duplicate-p entry *history*)))
       (vector-push-extend entry *history*)
       (handler-case
           (progn

@@ -42,6 +42,8 @@
            #:*directory-change-hooks*
            #:*prompt-function*
            #:*line-editor-keymap*
+           #:*line-editor-word-delimiter-mode-p*
+           #:*line-editor-word-delimiters*
            #:*semantic-prompt-markers-enabled*
            #:prompt-default
            #:command

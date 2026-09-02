@@ -313,7 +313,7 @@ Interactive terminals receive OSC 133 semantic prompt markers for prompt start,
 input start, execution start and command completion with the exit status. Set
 *semantic-prompt-markers-enabled* to NIL in startup.lisp to disable them.
 
-  Left/Right C-b/C-f   move/accept   Ctrl-arrows move by word
+  Left/Right C-b/C-f   move/accept   Ctrl-arrows move by word segment
   Up/Down C-p/C-n      history match C-w/C-h     kill word
   Home/End C-a/C-e     line ends     C-k/C-u     kill rest/line
   Backspace / Delete   delete        C-l/C-c     clear/abort
@@ -329,6 +329,10 @@ Clinedi key bindings are programmable from startup.lisp through
 Use clinedi:make-keymap with :parent for a layer or copy-keymap for a
 detached map. The CCLSH default is private to this image.
 
+Ctrl-Left, Ctrl-Right and Ctrl-Backspace also split words at -, _, /, . and
+: by default. Set *line-editor-word-delimiter-mode-p* to NIL for whitespace-only
+behavior, or set *line-editor-word-delimiters* to another character list.
+
 Colors: external commands green, builtins and valid implicit directory
 paths cyan, unknown red, lone bound variables magenta, strings yellow,
 numbers cyan, $VAR magenta, globs and ~ bright magenta. In Lisp: known
@@ -342,8 +346,8 @@ respected), one printed string per entry:
   \"ls -la\"
   \"(pipe (git \\\"log\\\") (head))\"
 
-Loading keeps the newest 10000. Blank lines, aborted lines and
-immediate duplicates are skipped. Non-interactive sessions neither
+Loading keeps the newest 10000. Blank lines, aborted lines and consecutive
+duplicates are skipped. Non-interactive sessions neither
 load nor write history. Multi-line entries recall with their original
 newlines. With text entered, Up searches entries containing that complete
 draft using smart case; Down walks newer matches and restores the draft after
