@@ -124,4 +124,7 @@
      (ensure-selected-system "cclsh" cclsh-asd)
      (asdf:load-system "cclsh"))))
 
-(cclsh:shell-toplevel)
+(if (equal (uiop:getenv "CCLSH_SERVER_MODE") "run")
+    (cclsh::server-run (or (uiop:getenv "CCLSH_SERVER_SOCKET")
+                         (error "Missing CCLSH_SERVER_SOCKET")))
+    (cclsh:shell-toplevel))

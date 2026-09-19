@@ -62,6 +62,7 @@
 (defconstant +process-sigttou+ sb-posix:sigttou)
 (defconstant +process-eintr+ sb-posix:eintr)
 (defconstant +process-echild+ sb-posix:echild)
+(defconstant +process-esrch+ sb-posix:esrch)
 
 (define-condition process-spawn-error (error)
   ((program :initarg :program :reader process-spawn-error-program)
@@ -82,6 +83,7 @@
   (generation 0)
   (event nil)
   (monitor nil)
+  (session nil)
   (lock (ccl:make-lock "cclsh child state") :read-only t))
 
 (defun process--errno (condition)
@@ -121,6 +123,10 @@ them, so readers observe EOF once the final pipeline writer exits."
 
 (defun fd-open-input (path)
   "Open PATH for byte input."
+  (when *session-process-function*
+    (return-from fd-open-input
+      (funcall *session-process-function* :open
+               (namestring (merge-pathnames path)) +process-o-read-only+ 0)))
   (handler-case
       (sb-posix:open path +process-o-read-only+)
     (sb-posix:syscall-error (condition)
@@ -128,6 +134,13 @@ them, so readers observe EOF once the final pipeline writer exits."
 
 (defun fd-open-output (path &key append (mode #o666))
   "Open PATH for output, preserving MODE and APPEND semantics."
+  (when *session-process-function*
+    (return-from fd-open-output
+      (funcall *session-process-function* :open
+               (namestring (merge-pathnames path))
+               (logior +process-o-write-only+ +process-o-create+
+                       (if append +process-o-append+ +process-o-truncate+))
+               mode)))
   (handler-case
       (sb-posix:open path
                      (logior +process-o-write-only+
@@ -149,7 +162,7 @@ them, so readers observe EOF once the final pipeline writer exits."
 (defun path-set-mode (path mode)
   "Set PATH's mode to MODE."
   (handler-case
-      (sb-posix:chmod path mode)
+      (sb-posix:chmod (namestring (merge-pathnames path)) mode)
     (sb-posix:syscall-error (condition)
       (process--system-error path "set permissions" condition)))
   (values))
@@ -278,9 +291,14 @@ race, which is necessary for pipelines and foreground job control."
               (process--spawnattr-destroy attributes)))))))))
 
 (defun shell-process-spawn (program arguments
-                            &key (process-group 0) (fd0 0) (fd1 1) (fd2 2)
+                            &key (process-group 0) (fd0 *shell-input-fd*)
+                              (fd1 *shell-output-fd*) (fd2 *shell-error-fd*)
                               (environment (environment-variables)) event close-fds)
   "Spawn PROGRAM with ARGUMENTS and return an unmonitored child record."
+  (when *session-process-function*
+    (return-from shell-process-spawn
+      (funcall *session-process-function* :spawn program arguments
+               process-group fd0 fd1 fd2 environment event)))
   (let ((program (namestring program)))
     (process--make
      (process--spawn-call program (mapcar #'string arguments)
@@ -344,6 +362,16 @@ race, which is necessary for pipelines and foreground job control."
 
 (defun shell-process-start-monitor (process &optional event)
   "Start PROCESS's waitpid monitor once and return PROCESS."
+  (when (shell-process-session process)
+    (let ((start nil))
+      (ccl:with-lock-grabbed ((shell-process-lock process))
+        (when event (setf (shell-process-event process) event))
+        (unless (shell-process-monitor process)
+          (setf (shell-process-monitor process) t start t)))
+      (when start
+        (funcall *session-process-function* :monitor (shell-process-pid process))))
+    (when event (ccl:signal-semaphore event))
+    (return-from shell-process-start-monitor process))
   (ccl:with-lock-grabbed ((shell-process-lock process))
     (when event (setf (shell-process-event process) event))
     (unless (shell-process-monitor process)
@@ -380,12 +408,20 @@ race, which is necessary for pipelines and foreground job control."
 
 (defun shell-process-kill (process signal &key group)
   "Send SIGNAL to PROCESS or its process group."
+  (when (shell-process-session process)
+    (return-from shell-process-kill
+      (funcall *session-process-function* :kill
+               (if group (- (shell-process-pid process))
+                   (shell-process-pid process)) signal)))
   (sb-posix:kill (if group (- (shell-process-pid process))
                     (shell-process-pid process))
                  signal))
 
 (defun process-group-kill (process-group signal)
   "Send SIGNAL to PROCESS-GROUP and return success with errno."
+  (when *session-process-function*
+    (return-from process-group-kill
+      (funcall *session-process-function* :kill (- process-group) signal)))
   (handler-case
       (progn (sb-posix:kill (- process-group) signal) (values t 0))
     (sb-posix:syscall-error (condition)
@@ -393,6 +429,12 @@ race, which is necessary for pipelines and foreground job control."
 
 (defun process--reap-synchronously (process)
   "Wait for an unmonitored PROCESS and publish its terminal state."
+  (when (shell-process-session process)
+    (let ((event (ccl:make-semaphore)))
+      (shell-process-start-monitor process event)
+      (loop until (eq (shell-process-live-state process) :done)
+            do (ccl:wait-on-semaphore event)))
+    (return-from process--reap-synchronously (values)))
   (handler-case
       (multiple-value-bind (pid status)
           (sb-posix:waitpid (shell-process-pid process) 0)
@@ -407,5 +449,7 @@ race, which is necessary for pipelines and foreground job control."
     (ignore-errors (shell-process-kill process signal)))
   (let ((monitor (ccl:with-lock-grabbed ((shell-process-lock process))
                    (shell-process-monitor process))))
-    (if monitor (ccl:join-process monitor) (process--reap-synchronously process)))
+    (if (and monitor (not (shell-process-session process)))
+        (ccl:join-process monitor)
+        (process--reap-synchronously process)))
   (shell-process-exit-status process))

@@ -96,13 +96,17 @@
   "Return the path of the user's startup file."
   (concatenate 'string (config-directory) "startup.lisp"))
 
+(defvar *startup-load-lock* (ccl:make-lock "shell startup loading")
+  "Serialize startup files that may define shared Lisp functions.")
+
 (defun startup-load ()
   "Load the user's startup.lisp when present. Errors are reported and
    otherwise ignored so a broken startup file never bricks the shell."
   (let ((file (startup-file)))
     (when (probe-file file)
       (handler-case
-          (load file :verbose nil :external-format ':utf-8)
+          (ccl:with-lock-grabbed (*startup-load-lock*)
+            (load file :verbose nil :external-format ':utf-8))
         (serious-condition (condition)
           (dispatch-report-error condition)))))
   (values))

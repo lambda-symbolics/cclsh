@@ -65,11 +65,11 @@
 
 (defun terminal-tty-p ()
   "True when standard input is an interactive terminal."
-  (= 1 (terminal--isatty 0)))
+  (= 1 (terminal--isatty *shell-input-fd*)))
 
 (defun terminal-output-tty-p ()
   "True when presentation output is an interactive terminal."
-  (and *presentation-enabled* (= 1 (terminal--isatty 1))))
+  (and *presentation-enabled* (= 1 (terminal--isatty *shell-output-fd*))))
 
 (defparameter *semantic-prompt-markers-enabled* t)
 (defvar *semantic-command-marker-active* nil)
@@ -101,7 +101,7 @@
 (defun terminal--get-termios ()
   "Return a fresh SB-POSIX termios object, or NIL outside a terminal."
   (handler-case
-      (sb-posix:tcgetattr 0)
+      (sb-posix:tcgetattr *shell-input-fd*)
     (sb-posix:syscall-error () nil)))
 
 (defun terminal--copy-termios (attributes)
@@ -122,7 +122,7 @@
   "Apply ATTRIBUTES immediately. Return success and errno."
   (handler-case
       (progn
-        (sb-posix:tcsetattr 0 sb-posix:tcsanow attributes)
+        (sb-posix:tcsetattr *shell-input-fd* sb-posix:tcsanow attributes)
         (values t 0))
     (sb-posix:syscall-error (condition)
       (values nil (sb-posix:syscall-errno condition)))))
@@ -176,7 +176,7 @@
 (defun terminal-size ()
   "Return terminal rows and columns, defaulting to 24 by 80."
   (cffi:with-foreign-object (winsize :unsigned-short 4)
-    (if (zerop (terminal--ioctl 0 +winsize-ioctl+ winsize))
+    (if (zerop (terminal--ioctl *shell-input-fd* +winsize-ioctl+ winsize))
         (let ((rows (cffi:mem-aref winsize :unsigned-short 0))
               (columns (cffi:mem-aref winsize :unsigned-short 1)))
           (values (if (plusp rows) rows 24)
@@ -203,20 +203,25 @@
 
 (defun terminal-own-process-group ()
   "Return the shell process group."
-  (sb-posix:getpgrp))
+  (if *session-process-function*
+      (funcall *session-process-function* :own-group)
+      (sb-posix:getpgrp)))
 
 (defun terminal-foreground (process-group)
   "Make PROCESS-GROUP own the terminal. Return success and errno."
+  (when *session-process-function*
+    (return-from terminal-foreground
+      (funcall *session-process-function* :foreground process-group)))
   (terminal--call-with-sigttou-safe
    process-group
    (lambda ()
-     (if (zerop (terminal--tcsetpgrp 0 process-group))
+     (if (zerop (terminal--tcsetpgrp *shell-input-fd* process-group))
          (values t 0)
          (values nil (terminal--errno))))))
 
 (defun terminal-current-foreground ()
   "Return the foreground process group and errno."
-  (let ((process-group (terminal--tcgetpgrp 0)))
+  (let ((process-group (terminal--tcgetpgrp *shell-input-fd*)))
     (if (minusp process-group)
         (values nil (terminal--errno))
         (values process-group 0))))

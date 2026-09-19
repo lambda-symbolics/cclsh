@@ -1,0 +1,12 @@
+#!/bin/sh
+set -eu
+repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+temporary=$(mktemp -d "$repo/.session-build.XXXXXX")
+trap 'rm -rf -- "$temporary"' 0
+"${CC:-cc}" -std=c11 -O2 -Wall -Wextra -Werror -fPIC -shared \
+    "$repo/launcher/session-ipc.c" -o "$temporary/libcclsh-session.so"
+"${CC:-cc}" -std=c11 -O2 -Wall -Wextra -Werror \
+    "$repo/launcher/session-client.c" "$repo/launcher/session-ipc.c" \
+    -o "$temporary/cclsh-session"
+mv -f "$temporary/libcclsh-session.so" "$repo/libcclsh-session.so"
+mv -f "$temporary/cclsh-session" "$repo/cclsh-session"

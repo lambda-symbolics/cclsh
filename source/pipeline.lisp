@@ -480,7 +480,7 @@ PRINC-TO-STRING, preserving the former scalar argument behavior."
                                                   tty-proxy-p)
                                              proxy-read)
                                             ((zerop index)
-                                             (or input-fd 0))
+                                             (or input-fd *shell-input-fd*))
                                             (t
                                              (car (aref boundaries
                                                         (1- index)))))
@@ -488,10 +488,10 @@ PRINC-TO-STRING, preserving the former scalar argument behavior."
                                              (cdr (aref boundaries index)))
                                             (capture capture-write)
                                             (output-fd output-fd)
-                                            (t 1))
+                                            (t *shell-output-fd*))
                             for fd2 = (cond (merge-error fd1)
                                             (error-fd error-fd)
-                                            (t 2))
+                                            (t *shell-error-fd*))
                             collect
                             (make-pipeline-stage
                              :kind (first command)
@@ -1094,7 +1094,7 @@ has started, so an asynchronous task abort cannot leave an unowned child."
            (pipeline-plan-sentinel-path plan) nil group
            :fd0 (pipeline-plan-sentinel-read-fd plan)
            :fd1 (pipeline-plan-sentinel-null-fd plan)
-           :fd2 2
+           :fd2 *shell-error-fd*
            :close-fds (pipeline-plan-descriptors plan)))
     (when (pipeline-plan-tty-proxy-write-fd plan)
       (setf (pipeline-task-group-tty-proxy group)
@@ -1107,7 +1107,7 @@ has started, so an asynchronous task abort cannot leave an unowned child."
              group
              :fd0 (pipeline-plan-tty-proxy-demand-read-fd plan)
              :fd1 (pipeline-plan-tty-proxy-write-fd plan)
-             :fd2 2
+             :fd2 *shell-error-fd*
              :close-fds (pipeline-plan-descriptors plan)))))
   (dolist (stage (pipeline-plan-stages plan))
     (when (eq (pipeline-stage-kind stage) ':external)

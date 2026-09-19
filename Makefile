@@ -7,14 +7,21 @@ PROBE_USER ?=
 CCL ?= ccl
 CCL_IMAGE ?=
 CCL_SOURCE ?= ../ccl
+PYTHON ?= python3
 
-.PHONY: build fast system-shell-build login-build ccl-kernel check sbcl-check integration-check install install-fast install-system-shell install-login-shell
+.PHONY: build fast session session-check system-shell-build login-build ccl-kernel check sbcl-check integration-check install install-fast install-system-shell install-login-shell
 
 build:
 	CCLSH_CCL="$(CCL)" CCLSH_CCL_IMAGE="$(CCL_IMAGE)" scripts/build
 
 fast:
 	scripts/build-fast
+
+session:
+	scripts/build-session
+
+session-check: session
+	$(PYTHON) tests/session-server.py
 
 system-shell-build: CCL = $(CCL_SOURCE)/lx86cl64
 system-shell-build:

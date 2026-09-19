@@ -27,6 +27,12 @@
 
 (defun environment--set-string (name text)
   "Set NAME to TEXT while the caller owns *ENVIRONMENT-LOCK*."
+  (when *session-environment*
+    (when (or (zerop (length name)) (find #\= name)
+              (find #\Null name) (find #\Null text))
+      (error "Invalid environment binding: ~s" name))
+    (return-from environment--set-string
+      (setf (gethash name *session-environment*) text)))
   (handler-case
       (progn
         (sb-posix:setenv name text 1)
@@ -41,6 +47,12 @@
   "Replace the process environment with string BINDINGS.
 SBCL's POSIX interface has no CLEARENV binding, so remove the existing names
 before applying the requested snapshot while holding the environment lock."
+  (when *session-environment*
+    (ccl:with-lock-grabbed (*environment-lock*)
+      (clrhash *session-environment*)
+      (dolist (binding bindings)
+        (environment--set-string (car binding) (cdr binding))))
+    (return-from environment--replace-exact (values)))
   (ccl:with-lock-grabbed (*environment-lock*)
     (dolist (entry (sb-ext:posix-environ))
       (let ((separator (position #\= entry)))
@@ -66,6 +78,9 @@ before applying the requested snapshot while holding the environment lock."
 
 (defun environment-call-with-package (function)
   "Call FUNCTION with CCLSH_PACKAGE synchronized for child processes."
+  (when *session-environment*
+    (environment-package-sync)
+    (return-from environment-call-with-package (funcall function)))
   (ccl:with-lock-grabbed (*environment-lock*)
     (environment--package-sync)
     (funcall function)))
@@ -73,7 +88,9 @@ before applying the requested snapshot while holding the environment lock."
 (defun getenv (name)
   "Return NAME's value, or NIL when it is absent."
   (ccl:with-lock-grabbed (*environment-lock*)
-    (sb-posix:getenv (environment-name name))))
+    (if *session-environment*
+        (gethash (environment-name name) *session-environment*)
+        (sb-posix:getenv (environment-name name)))))
 
 (defun setenv (name value)
   "Set NAME to VALUE and return VALUE."
@@ -85,6 +102,10 @@ before applying the requested snapshot while holding the environment lock."
 
 (defun unsetenv (name)
   "Remove NAME from the process environment."
+  (when *session-environment*
+    (ccl:with-lock-grabbed (*environment-lock*)
+      (remhash (environment-name name) *session-environment*))
+    (return-from unsetenv (values)))
   (let ((name (environment-name name)))
     (ccl:with-lock-grabbed (*environment-lock*)
       (handler-case
@@ -108,4 +129,9 @@ before applying the requested snapshot while holding the environment lock."
   "Return a sorted live NAME=value environment snapshot."
   (ccl:with-lock-grabbed (*environment-lock*)
     (environment--package-sync)
-    (sort (copy-list (sb-ext:posix-environ)) #'string<)))
+    (sort (if *session-environment*
+              (loop for name being the hash-keys of *session-environment*
+                      using (hash-value value)
+                    collect (concatenate 'string name "=" value))
+              (copy-list (sb-ext:posix-environ)))
+          #'string<)))

@@ -50,18 +50,31 @@
 (defvar *command-line-argument-list* nil)
 (defvar *unprocessed-command-line-arguments* nil)
 
+(defvar *session-directory* nil)
+(defvar *session-exit-function* nil)
+(defvar *session-environment-function* nil)
+(defvar *session-thread-function* nil)
+
 (defun current-directory ()
   "Return the current working directory as a pathname."
-  (uiop:getcwd))
+  (or *session-directory* (uiop:getcwd)))
 
 (defun (setf current-directory) (directory)
   "Change the current working directory to DIRECTORY."
-  (uiop:chdir directory)
+  (if *session-directory*
+      (let ((resolved (truename (merge-pathnames directory *session-directory*))))
+        (unless (uiop:directory-pathname-p resolved)
+          (error "Not a directory: ~a" directory))
+        (setf *session-directory* resolved
+              *default-pathname-defaults* resolved))
+      (uiop:chdir directory))
   directory)
 
 (defun quit (&optional (status 0))
   "Leave the current SBCL process with STATUS."
-  (uiop:quit status))
+  (if *session-exit-function*
+      (funcall *session-exit-function* status)
+      (uiop:quit status)))
 
 (defun make-lock (name &key read-only)
   "Create a mutual-exclusion lock named NAME.
@@ -92,9 +105,12 @@ READ-ONLY is accepted for CCL source compatibility."
 
 (defun process-run-function (name function &rest arguments)
   "Start FUNCTION with ARGUMENTS in a named Lisp thread."
-  (bordeaux-threads:make-thread
-   (lambda () (apply function arguments))
-   :name name))
+  (let ((thunk (lambda () (apply function arguments))))
+    (bordeaux-threads:make-thread
+     (if *session-thread-function*
+         (funcall *session-thread-function* thunk)
+         thunk)
+     :name name)))
 
 (defun join-process (process)
   "Join a Lisp thread started by PROCESS-RUN-FUNCTION."
@@ -151,7 +167,11 @@ EXTERNAL-FORMAT is accepted for CCL source compatibility."
                       :output output
                       :error error
                       :wait wait
-                      :environment (or env (sb-ext:posix-environ))))
+                      :directory (current-directory)
+                      :environment (or env
+                                       (and *session-environment-function*
+                                            (funcall *session-environment-function*))
+                                       (sb-ext:posix-environ))))
 
 (defun external-process-status (process)
   "Return PROCESS's state keyword and its exit code or signal, like CCL."

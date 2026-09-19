@@ -11,15 +11,16 @@
                 :components
                  (#+sbcl (:file "sbcl/compat")
                  (:file "package" :depends-on (#+sbcl "sbcl/compat"))
+                 (:file "session-state" :depends-on ("package"))
                  #+ccl (:file "environment" :depends-on ("package"))
                  #+sbcl (:file "environment" :pathname "sbcl/environment"
-                          :depends-on ("package"))
+                          :depends-on ("session-state"))
                  #+ccl (:file "prewarm" :depends-on ("package" "environment"))
                  #+sbcl (:file "prewarm" :pathname "sbcl/prewarm"
                           :depends-on ("package" "environment"))
                  #+ccl (:file "terminal" :depends-on ("package"))
                  #+sbcl (:file "terminal" :pathname "sbcl/terminal"
-                          :depends-on ("package"))
+                          :depends-on ("session-state"))
                  #+ccl (:file "process" :depends-on ("package" "environment"))
                  #+sbcl (:file "process" :pathname "sbcl/process"
                           :depends-on ("package" "environment"))
@@ -31,7 +32,7 @@
                  (:file "history"
                   :depends-on ("lexer" "environment" "process"))
                  (:file "prompt"   :depends-on ("terminal" "command" "expand" "environment" "jobs"))
-                 (:file "pipeline" :depends-on ("command" "jobs"))
+                 (:file "pipeline" :depends-on ("command" "jobs" "session-state"))
                  (:file "directory"
                   :depends-on ("command" "jobs" "expand" "terminal" "pipeline"))
                  (:file "complete" :depends-on ("lexer" "command" "expand" "highlight"))
@@ -45,5 +46,7 @@
                  (:file "main"
                   :depends-on ("dispatch" "line-editor" "prompt" "directory"
                                "builtins" "pipeline" "jobs" "manual"
-                               "prewarm")))))
+                               "prewarm"))
+                 #+sbcl (:file "session-server" :pathname "sbcl/session-server"
+                          :depends-on ("main")))))
   :description "A system shell running inside Common Lisp")

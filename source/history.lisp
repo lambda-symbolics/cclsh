@@ -81,6 +81,9 @@
             do (vector-push-extend entry *history*)))
   (values))
 
+(defvar *history-write-lock* (ccl:make-lock "shell history append")
+  "Keep records from sessions in one image from interleaving on disk.")
+
 (defun history-append (entry)
   "Record ENTRY in memory and append it to the history file. Blank
    entries and immediate duplicates are skipped."
@@ -89,7 +92,7 @@
                (not (history--immediate-duplicate-p entry *history*)))
       (vector-push-extend entry *history*)
       (handler-case
-          (progn
+          (ccl:with-lock-grabbed (*history-write-lock*)
             (ensure-directories-exist (config-directory))
             (path-set-mode (config-directory) #o700)
             (let ((descriptor

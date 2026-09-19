@@ -15,3 +15,5 @@
 *.dx64fsl
 *.wx64fsl
 *~
+/cclsh-session
+/libcclsh-session.so
