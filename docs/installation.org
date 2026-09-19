@@ -1,6 +1,9 @@
 #+TITLE: Installing cclsh
 #+AUTHOR: Lukáš Hozda
 
+See [[file:power.org][Idle power and shell sessions]] for the prewarm daemon's
+event-driven waits, measurements, and shared-server design constraints.
+
 cclsh has two supported host-Lisp paths:
 
 - CCL 1.13 on Linux x86-64 provides the Nix package, release archives, saved

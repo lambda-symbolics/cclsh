@@ -1,0 +1,95 @@
+#+title: Idle power and shell sessions
+
+* Scope
+
+This audit covers CCLSH 1.7.0 plus the NetBSD laptop's changes based on
+=21df049=. The laptop checkout is
+=root@10.0.0.25:/usr/local/lib/cclsh/src/cclsh=; its four edited source files
+were identical to the local uncommitted files on 2026-09-19.
+
+The existing =cclsh-fast= service is a CCL process pool. It is not a shared
+SBCL image: every attached shell consumes a separate Lisp process, with an
+additional worker prepared for the next connection. The SBCL source launcher
+does not implement that protocol.
+
+* Wakeups
+
+The supervisor previously polled every 20 ms, and every attached relay polled
+every 100 ms. That imposes approximately 50 supervisor wakeups per second,
+plus 10 per attached terminal, even when no work is available.
+
+The supervisor now waits for connections, worker readiness, client disconnects,
+or SIGCHLD. A starting worker retains its three-second deadline. Failed spawn
+attempts retry at one-second intervals; a healthy idle pool has no timer.
+The relay waits for input, output, exit status or signals; its 500 ms output
+drain deadline only applies during shutdown. Signal masking and =ppoll= make
+the state check and sleep atomic with respect to child exits and resizes.
+
+A suspended pipeline's late external-command spawn previously looped around
+a scheduler yield. It now waits on a semaphore registered under the group
+lock. Resume and abort wake all registered spawners; a woken spawner rechecks
+the group state before creating a child.
+
+Ordinary child monitors block in =waitpid=, job waiters block on semaphores,
+and the line editor blocks reading input. Escape-sequence and paste delays
+are triggered by input, not by an idle timer. Prompt functions, including
+external prompt programs configured in startup.lisp, run when a prompt is
+requested. User configuration can introduce its own timers or background jobs.
+
+* Verification
+
+Run from a checkout with a built CCL image:
+
+#+begin_src sh
+scripts/build-fast
+tests/fast-launcher.sh
+python3 tests/fast-idle.py
+scripts/check
+make sbcl-check SBCL=sbcl
+#+end_src
+
+The Linux idle test checks an isolated supervisor and an actually leased
+terminal relay through =/proc= voluntary context-switch counters, then checks
+terminal resize propagation. On the development host both counters increased
+by zero over 1.2 seconds. This measures those processes' scheduler activity,
+not battery watts, CPU package residency, or all Lisp runtime threads.
+
+The SBCL checks also exercise child signal dispositions, the process
+compatibility wrapper, and symlink-preserving globbing. They pass on Linux
+and on the NetBSD 11.0 laptop from a temporary source snapshot.
+
+The CCL regression, argument-boundary and build-rollback checks pass locally.
+The complete =scripts/check= command subsequently stops in the system-install
+fixture because this host's root directory has mode 0775; shell registration
+rejects a group-writable ancestor. The host directory permissions were not
+changed for this test.
+
+* Shared-image server boundary
+
+A shared server needs per-session cwd, environment, Lisp package, history,
+jobs, prompt settings, terminal attributes, descriptors, status and exit
+handling. Dynamically binding the shell variables is only part of this:
+=chdir=, =setenv=, signal dispositions, and process exit currently affect the
+whole image. Relative file operations and child process creation must use
+the session's cwd without temporarily changing the server's process cwd.
+Pipeline threads must explicitly inherit their session state.
+
+POSIX controlling-terminal ownership is also per operating-system session.
+One Lisp process cannot be the controlling-terminal owner of every client.
+A small native helper per terminal session can own its controlling terminal,
+spawn children, assign process groups, reap children and report state changes.
+The shared Lisp image then owns the shell sessions and communicates with these
+helpers through blocking local sockets. Idle helpers must have no heartbeat.
+
+The client protocol needs version negotiation, connection ownership checks,
+session creation, input, output, resize, interrupt, detach and exit messages.
+PTY traffic for interactive programs can remain bytes; structured Lisp output
+can be a separately negotiated capability. Server unavailability may fall
+back to an ordinary shell only before session creation is acknowledged, so
+commands are never run twice.
+
+Sharing an image also means choosing which Lisp state is shared. Dynamic
+bindings can isolate shell settings; function definitions, loaded libraries,
+package mutations and arbitrary foreign calls are shared unless explicitly
+given another implementation boundary. This is a user-visible semantic
+decision, not merely a launch-speed optimization.
