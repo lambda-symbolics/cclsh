@@ -7,10 +7,10 @@ This audit covers CCLSH 1.7.0 plus the NetBSD laptop's changes based on
 =root@10.0.0.25:/usr/local/lib/cclsh/src/cclsh=; its four edited source files
 were identical to the local uncommitted files on 2026-09-19.
 
-The existing =cclsh-fast= service is a CCL process pool. It is not a shared
+The older =cclsh-fast= service is a CCL process pool. It is not a shared
 SBCL image: every attached shell consumes a separate Lisp process, with an
-additional worker prepared for the next connection. The SBCL source launcher
-does not implement that protocol.
+additional worker prepared for the next connection. The new opt-in
+[[file:daemon.org][cclshd service]] instead shares one SBCL image across terminal sessions.
 
 * Wakeups
 
@@ -67,32 +67,30 @@ fixture because this host's root directory has mode 0775; shell registration
 rejects a group-writable ancestor. The host directory permissions were not
 changed for this test.
 
-* Shared-image server boundary
+* Shared SBCL server
 
-A shared server needs per-session cwd, environment, Lisp package, history,
-jobs, prompt settings, terminal attributes, descriptors, status and exit
-handling. Dynamically binding the shell variables is only part of this:
-=chdir=, =setenv=, signal dispositions, and process exit currently affect the
-whole image. Relative file operations and child process creation must use
-the session's cwd without temporarily changing the server's process cwd.
-Pipeline threads must explicitly inherit their session state.
+=make session-check= opens two terminal sessions and verifies that both use
+the same SBCL PID. On Linux, the server (all threads) and the two native
+clients each recorded zero voluntary context switches over an idle 1.2-second
+interval. This is a short scheduler-activity measurement, not a watts estimate
+or a guarantee about arbitrary startup configuration and runtime workloads.
 
-POSIX controlling-terminal ownership is also per operating-system session.
-One Lisp process cannot be the controlling-terminal owner of every client.
-A small native helper per terminal session can own its controlling terminal,
-spawn children, assign process groups, reap children and report state changes.
-The shared Lisp image then owns the shell sessions and communicates with these
-helpers through blocking local sockets. Idle helpers must have no heartbeat.
+Session integration checks pass on Linux and the NetBSD laptop from a
+temporary source snapshot. Only Linux's counters are measured by this test.
+Checks cover shared definitions, recoverable reader/compiler/evaluation
+errors, independent cwd/environment/package/REPL state, startup configuration,
+pipelines, Ctrl-Z/bg/fg/Ctrl-C, client disconnects and ordinary-launch fallback.
 
-The client protocol needs version negotiation, connection ownership checks,
-session creation, input, output, resize, interrupt, detach and exit messages.
-PTY traffic for interactive programs can remain bytes; structured Lisp output
-can be a separately negotiated capability. Server unavailability may fall
-back to an ordinary shell only before session creation is acknowledged, so
-commands are never run twice.
+Each terminal has a small native client for controlling-terminal ownership,
+child creation, process groups and child events. Clients wait on sockets and
+a signal pipe without periodic timers. The Lisp server uses blocking sockets
+and semaphores; terminal descriptors are passed directly rather than relayed.
+Child monitoring starts after pipeline construction, preserving exited group
+leaders long enough for later stages to join their process group on NetBSD.
 
-Sharing an image also means choosing which Lisp state is shared. Dynamic
-bindings can isolate shell settings; function definitions, loaded libraries,
-package mutations and arbitrary foreign calls are shared unless explicitly
-given another implementation boundary. This is a user-visible semantic
-decision, not merely a launch-speed optimization.
+Shell state is dynamically bound per session and explicitly inherited by
+pipeline threads. Shell cwd and environment operations do not mutate the
+server's process-wide state. Definitions and libraries remain shared: normal
+Lisp errors are recoverable, but native faults and direct process exits are
+not isolated. See [[file:daemon.org][the daemon guide]] for the supported boundaries,
+configuration, fallback rules and limitations.

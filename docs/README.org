@@ -10,12 +10,15 @@
   =~/.config/cclsh/startup.lisp=.
 - [[file:installation.org::*Experimental prewarmed launcher][Prewarmed launcher]]
   documents the opt-in daemon, direct fallback and terminal limits.
+- [[file:daemon.org][Shared SBCL daemon]] covers multiple terminal sessions in one
+  image, shared definitions and error boundaries.
 
 A concise built-in manual is available inside cclsh with =help=, or from
 another shell with =cclsh help= and =cclsh help SECTION=.
 
 * Maintainer documentation
 
+- [[file:power.org][Idle power audit]] records wakeup fixes and session measurements.
 - [[file:../patches/README.org][CCL patch ledger]] records downstream patch
   provenance, hashes and validation.
 - [[file:yew-lish-adaptation.org][Yew and Lish adaptation report]] evaluates

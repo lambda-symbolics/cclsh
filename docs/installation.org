@@ -1,8 +1,8 @@
 #+TITLE: Installing cclsh
 #+AUTHOR: Lukáš Hozda
 
-See [[file:power.org][Idle power and shell sessions]] for the prewarm daemon's
-event-driven waits, measurements, and shared-server design constraints.
+See [[file:daemon.org][Shared SBCL daemon]] for opt-in multi-terminal sessions in one image,
+and [[file:power.org][Idle power and shell sessions]] for wakeup measurements.
 
 cclsh has two supported host-Lisp paths:
 

@@ -81,6 +81,7 @@ both command mode and Lisp.
 - command strings, scripts, shebang scripts and piped input
 - optional zoxide integration with =z= and =zi=
 - optional experimental =cclsh-fast= prewarmed interactive launcher (CCL only)
+- optional experimental =cclshd= shared-image terminal sessions (SBCL)
 
 * Documentation
 
@@ -90,6 +91,7 @@ both command mode and Lisp.
   login-shell deployment
 - [[file:docs/installation.org::*Experimental prewarmed launcher][Prewarmed launcher]]:
   opt-in daemon setup, fallback behavior and current limits
+- [[file:docs/daemon.org][Shared SBCL daemon]]: setup, session state and shared-definition limits
 - [[file:examples/startup.lisp][Example startup file]]
 - [[file:docs/README.org][Documentation index]]
 

@@ -1,0 +1,86 @@
+#+title: Shared SBCL daemon
+
+* Try it
+
+The experimental, opt-in =cclshd= runs multiple terminal sessions in one
+SBCL image. It is separate from the older CCL =cclsh-fast= worker pool.
+Neither is enabled by default; your installed shell and login shell are
+unchanged. The shared daemon has been tested on Linux and NetBSD.
+
+From a checkout with the [[file:installation.org][SBCL source-launcher dependencies]] installed,
+build the native client and IPC library, then start the server:
+
+#+begin_src sh
+make session
+scripts/cclshd start
+scripts/cclshd status
+scripts/cclshd attach
+#+end_src
+
+Run =attach= in each terminal that should use the server. No argument also
+means =attach=. =exit= closes that session; =scripts/cclshd stop= shuts down
+the server and all attached sessions. There is no detach/reattach support.
+To rebuild or update source, stop the server first and restart afterwards.
+
+The usual source-launcher variables apply, including =CCLSH_SBCL= (for
+example, =/usr/pkg/bin/sbcl= on NetBSD), =CCLSH_QUICKLISP_SETUP= and dependency
+source overrides. Startup configuration is loaded for each attached session.
+For startup diagnostics, run =scripts/cclshd run= in the foreground instead
+of =start=. =CCLSH_SESSION_DEBUG= enables native spawn/child-state logging.
+
+The socket defaults to =${XDG_RUNTIME_DIR}/cclshd-UID/server.sock=, or
+=${TMPDIR:-/tmp}/cclshd-UID/server.sock= without =XDG_RUNTIME_DIR=.
+=CCLSH_DAEMON_SOCKET= overrides it; its parent directory must be private
+(0700) and owned by your user. Server and client verify peer ownership.
+This is a same-user service, not a remote shell or a privilege boundary.
+
+* What is separate, and what is shared?
+
+Each session has its own shell cwd, environment, selected Lisp package,
+REPL values, in-memory history, jobs, prompt settings and terminal state.
+Shell-spawned pipeline threads inherit that session context. History still
+uses the configured history file; writes and startup-file loads are serialized.
+External commands and shell redirects use the client's umask.
+
+Function definitions, packages and loaded libraries are shared. Defining a
+function in one terminal makes it available in another using the same package.
+Ordinary reader errors, compiler errors and evaluation errors are reported in
+the affected terminal and leave the daemon running. A malformed definition
+is not supposed to take down your other shells; the integration test checks it.
+
+This is not isolation for arbitrary Lisp code. Redefining shared functions
+affects other sessions. Native faults, process-wide exits such as
+=sb-ext:exit=, and resource exhaustion can take down every session. Use shell
+=exit= (or the compatibility =ccl:quit=), not a host-specific process exit.
+Direct OS operations such as =sb-posix:chdir= or =sb-posix:setenv= bypass
+session state; use CCLSH's directory and environment operations instead.
+Foreign libraries and arbitrary user-created threads may also use global
+process state. Lisp =OPEN= uses the daemon's conservative process-wide umask
+077, whereas shell redirections preserve the attaching client's umask.
+Use ordinary CCLSH for experiments needing process isolation.
+
+* Terminal handling, fallback and power
+
+One small native client per terminal owns its controlling terminal and
+spawns, groups and reaps external jobs. It passes terminal descriptors over a
+local Unix socket, so the Lisp image reads and writes the terminal directly.
+There is no output relay, heartbeat or idle polling timer. This version does
+not provide a structured-output terminal frontend.
+
+If no compatible daemon answers, =attach= executes the ordinary SBCL source
+launcher. Arguments (scripts or =-c=, for example), redirected standard
+streams, and unsupported terminal ownership also use the ordinary launcher.
+Fallback happens only before session commitment: a disconnected running
+session is closed, never replayed in a new shell.
+
+#+begin_src sh
+make session-check
+#+end_src
+
+Set =PYTHON= if needed, for example =make session-check PYTHON=python3.13=.
+
+The test opens real PTYs, checks two sessions in the same image, errors,
+shared definitions, cwd/environment separation, pipelines, job control,
+configuration, disconnects and fallback. On Linux it also measures idle
+context switches across all server and client threads. See
+[[file:power.org][the power audit]] for results and limitations.
