@@ -133,11 +133,45 @@ EXTERNAL-FORMAT is accepted for CCL source compatibility."
 
 (defun native-translated-namestring (pathname)
   "Return PATHNAME in the host operating system's native syntax."
-  (native-namestring pathname))
+  (sb-ext:native-namestring pathname))
 
 (defun getpid ()
   "Return the Unix process identifier of the current SBCL process."
   (sb-posix:getpid))
+
+(defun run-program (program arguments
+                    &key (input nil) (output nil) (error nil) (wait t)
+                      external-format env)
+  "Run PROGRAM with ARGUMENTS through SBCL, using CCL's keyword vocabulary.
+EXTERNAL-FORMAT is accepted for CCL source compatibility."
+  (declare (ignore external-format))
+  (sb-ext:run-program program arguments
+                      :search t
+                      :input input
+                      :output output
+                      :error error
+                      :wait wait
+                      :environment (or env (sb-ext:posix-environ))))
+
+(defun external-process-status (process)
+  "Return PROCESS's state keyword and its exit code or signal, like CCL."
+  (let ((status (sb-ext:process-status process)))
+    (values (case status
+              ((:exited :signaled :stopped) status)
+              (t ':running))
+            (sb-ext:process-exit-code process))))
+
+(defun external-process-id (process)
+  "Return the Unix process identifier of PROCESS."
+  (sb-ext:process-pid process))
+
+(defun external-process-input-stream (process)
+  "Return the stream connected to PROCESS's standard input."
+  (sb-ext:process-input process))
+
+(defun external-process-output-stream (process)
+  "Return the stream connected to PROCESS's standard output."
+  (sb-ext:process-output process))
 
 (defstruct (sbcl-source-note
             (:constructor sbcl--make-source-note
