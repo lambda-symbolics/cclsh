@@ -84,3 +84,15 @@ shared definitions, cwd/environment separation, pipelines, job control,
 configuration, disconnects and fallback. On Linux it also measures idle
 context switches across all server and client threads. See
 [[file:power.org][the power audit]] for results and limitations.
+
+* Startup files inside the server
+
+Each attached session evaluates =~/.config/cclsh/startup.lisp= inside the
+server process, not in the terminal client.  The server is detached with
+=setsid= and its own descriptors 0-2 are =/dev/null=, and its process
+environment is not the session's.  Startup code that needs to know where it
+is running must use the session-aware accessors: =(getenv "DISPLAY")= reads
+the session environment, and =(terminal-name)= returns the path of the
+terminal the session reads from (for example =/dev/constty= for a console
+autologin), where a raw =ttyname(0)= reports nothing.  Commands started with
+=run= are spawned by the client onto that terminal.

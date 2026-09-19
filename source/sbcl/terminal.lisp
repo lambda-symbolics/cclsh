@@ -260,3 +260,16 @@
         (force-output))
       (fresh-line))
   (values))
+
+;;; Session terminal identity
+
+(cffi:defcfun ("ttyname" terminal--ttyname) :string (descriptor :int))
+
+(defun terminal-name ()
+  "Path of the terminal this session reads from, or NIL when input is not a
+   terminal.  Asks about *SHELL-INPUT-FD* rather than descriptor 0: inside
+   the shared session server (cclshd) descriptors 0-2 are /dev/null and each
+   session reads its client's forwarded terminal, so only the session
+   descriptor can tell a startup.lisp which console it is running on."
+  (when (= 1 (terminal--isatty *shell-input-fd*))
+    (ignore-errors (terminal--ttyname *shell-input-fd*))))

@@ -443,3 +443,14 @@ in the calling thread and restore the exact prior mask after FUNCTION."
         (force-output))
       (fresh-line))
   (values))
+
+;;; Session terminal identity
+
+(defun terminal-name ()
+  "Path of the terminal standard input reads from, or NIL when it is not a
+   terminal.  (The shared session server exists only on the SBCL backend,
+   whose version consults the per-session descriptor instead.)"
+  (when (= 1 (external-call "isatty" :int 0 :int))
+    (let ((name (external-call "ttyname" :int 0 :address)))
+      (unless (ccl:%null-ptr-p name)
+        (ccl:%get-cstring name)))))

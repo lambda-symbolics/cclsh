@@ -120,6 +120,7 @@
            #:setenv
            #:env
            #:environment-variables
+           #:terminal-name
            #:config-directory
            #:quicklisp-setup
            #:shell-error
