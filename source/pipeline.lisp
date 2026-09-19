@@ -160,6 +160,7 @@ PRINC-TO-STRING, preserving the former scalar argument behavior."
   processes
   process-group
   (lock (ccl:make-lock "cclsh pipeline tasks"))
+  (spawn-waiters nil)
   (suspended nil)
   (aborted nil)
   abort-signal)
@@ -715,31 +716,40 @@ CCL interrupts stay disabled until PROCESS-CELL owns the child and its monitor
 has started, so an asynchronous task abort cannot leave an unowned child."
   (let ((group (pipeline-run-context-group context)))
     (loop until (first process-cell)
-          do (ccl:without-interrupts
-               (ccl:with-lock-grabbed
-                   ((pipeline-task-group-lock group))
-                 (cond ((pipeline-task-group-aborted group)
-                        (error "pipeline task was aborted"))
-                       ((not (pipeline-task-group-suspended group))
-                        (let ((process-group
-                                (pipeline-task-group-process-group group)))
-                          (unless (and (integerp process-group)
-                                       (plusp process-group))
-                            (error "pipeline process group is unavailable"))
-                          (setf (first process-cell)
-                                (shell-process-spawn
-                                 path arguments
-                                 :process-group process-group
-                                 :fd0 (pipeline-run-context-input-fd context)
-                                 :fd1 (pipeline-run-context-output-fd context)
-                                 :fd2 (pipeline-run-context-error-fd context)
-                                 :close-fds
-                                 (pipeline-run-context-close-fds context)
-                                 :event event))
-                          (shell-process-start-monitor
-                           (first process-cell) event))))))
-             (unless (first process-cell)
-               (ccl:process-allow-schedule)))
+          do (let ((waiter nil))
+               (ccl:without-interrupts
+                 (ccl:with-lock-grabbed
+                     ((pipeline-task-group-lock group))
+                   (cond ((pipeline-task-group-aborted group)
+                          (error "pipeline task was aborted"))
+                         ((pipeline-task-group-suspended group)
+                          (setf waiter (ccl:make-semaphore))
+                          (push waiter (pipeline-task-group-spawn-waiters group)))
+                         (t
+                          (let ((process-group
+                                  (pipeline-task-group-process-group group)))
+                            (unless (and (integerp process-group)
+                                         (plusp process-group))
+                              (error "pipeline process group is unavailable"))
+                            (setf (first process-cell)
+                                  (shell-process-spawn
+                                   path arguments
+                                   :process-group process-group
+                                   :fd0 (pipeline-run-context-input-fd context)
+                                   :fd1 (pipeline-run-context-output-fd context)
+                                   :fd2 (pipeline-run-context-error-fd context)
+                                   :close-fds
+                                   (pipeline-run-context-close-fds context)
+                                   :event event))
+                            (shell-process-start-monitor
+                             (first process-cell) event))))))
+               (when waiter
+                 (unwind-protect
+                     (ccl:wait-on-semaphore waiter)
+                   (ccl:with-lock-grabbed ((pipeline-task-group-lock group))
+                     (setf (pipeline-task-group-spawn-waiters group)
+                           (delete waiter
+                                   (pipeline-task-group-spawn-waiters group))))))))
     (first process-cell)))
 
 (defun pipeline--run-context-wait (context process event)
@@ -983,6 +993,12 @@ has started, so an asynchronous task abort cannot leave an unowned child."
             (ccl:process-suspend (pipeline-task-thread task)))))))
   (values))
 
+(defun pipeline--wake-spawn-waiters (group)
+  "Wake blocked spawners while holding GROUP's lock after resume or abort."
+  (dolist (waiter (shiftf (pipeline-task-group-spawn-waiters group) nil))
+    (ccl:signal-semaphore waiter))
+  (values))
+
 (defun pipeline--resume-tasks (group)
   "Resume every worker suspended with GROUP."
   (let ((resume nil))
@@ -990,7 +1006,8 @@ has started, so an asynchronous task abort cannot leave an unowned child."
       (when (and (pipeline-task-group-suspended group)
                  (not (pipeline-task-group-aborted group)))
         (setf (pipeline-task-group-suspended group) nil
-              resume t)))
+              resume t)
+        (pipeline--wake-spawn-waiters group)))
     (when resume
       (dolist (task (pipeline-task-group-tasks group))
         (when (and (not (pipeline--task-done-p task))
@@ -1022,6 +1039,7 @@ has started, so an asynchronous task abort cannot leave an unowned child."
               resume (pipeline-task-group-suspended group)
               (pipeline-task-group-suspended group) nil
               abort t)
+        (pipeline--wake-spawn-waiters group)
         ;; Serialize a second signal with late child creation. Either the
         ;; child joins before this signal or sees ABORTED and never spawns.
         (let ((process-group

@@ -1796,6 +1796,55 @@
       (ignore-errors (ccl:join-process thread)))))
 
 
+;;;; -- Suspended pipeline spawners --
+
+(dolist (operation '(:resume :abort))
+  (let* ((group (cclsh::make-pipeline-task-group :suspended t))
+         (context (cclsh::make-pipeline-run-context :group group))
+         (finished (ccl:make-semaphore))
+         (failure nil)
+         (thread
+           (ccl:process-run-function
+            "suspended spawn check"
+            (lambda ()
+              (unwind-protect
+                  (handler-case
+                      (cclsh::pipeline--run-context-spawn
+                       context "/bin/true" nil (ccl:make-semaphore) (list nil))
+                    (error (condition)
+                      (setf failure (princ-to-string condition))))
+                (ccl:signal-semaphore finished))))))
+    (unwind-protect
+        (progn
+          (check-equal
+           "suspended spawn registers a blocking waiter"
+           t
+           (loop repeat 200
+                 when (ccl:with-lock-grabbed
+                          ((cclsh::pipeline-task-group-lock group))
+                        (not (null (cclsh::pipeline-task-group-spawn-waiters group))))
+                   return t
+                 do (sleep 0.01)))
+          (check-equal "suspended spawn has not executed" nil failure)
+          (ecase operation
+            (:resume (cclsh::pipeline--resume-tasks group))
+            (:abort (cclsh::pipeline--abort-tasks group)))
+          (check-equal "state change wakes suspended spawn"
+                       t (not (null (ccl:timed-wait-on-semaphore finished 2))))
+          ;; No real process group is supplied: resuming reaches validation;
+          ;; aborting must stop before any attempt to create a child.
+          (check-equal "woken spawn observes the new state"
+                       t
+                       (and failure
+                            (not (null
+                                  (search (ecase operation
+                                            (:resume "process group is unavailable")
+                                            (:abort "task was aborted"))
+                                          failure))))))
+      (ignore-errors (ccl:process-kill thread))
+      (ignore-errors (ccl:join-process thread)))))
+
+
 ;;;; -- Declarative argument completion --
 
 (defvar *check-completion-context* nil
