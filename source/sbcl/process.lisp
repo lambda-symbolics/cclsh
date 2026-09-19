@@ -28,9 +28,23 @@
   (pid :pointer) (program :string) (actions :pointer) (attributes :pointer)
   (arguments :pointer) (environment :pointer))
 
+(cffi:defcfun ("posix_spawnattr_setsigdefault"
+               process--spawnattr-setsigdefault) :int
+  (attributes :pointer) (sigdefault :pointer))
+(cffi:defcfun ("sigemptyset" process--sigemptyset) :int
+  (set :pointer))
+(cffi:defcfun ("sigaddset" process--sigaddset) :int
+  (set :pointer) (signal-number :int))
+
 (defconstant +process-spawn-attribute-storage+ 1024)
 (defconstant +process-spawn-file-actions-storage+ 1024)
 (defconstant +process-spawn-setpgroup+ #x02)
+(defconstant +process-spawn-setsigdef+
+  #+(or netbsd freebsd openbsd) #x10
+  #-(or netbsd freebsd openbsd) #x04)
+;; glibc sigset_t occupies 128 bytes; reserve aligned storage with room for
+;; the smaller BSD layouts as well, just as for the opaque spawn attributes.
+(defconstant +process-spawn-sigset-storage+ 1024)
 
 (defconstant +process-o-read-only+ sb-posix:o-rdonly)
 (defconstant +process-o-write-only+ sb-posix:o-wronly)
@@ -194,6 +208,8 @@ race, which is necessary for pipelines and foreground job control."
                              (/ +process-spawn-attribute-storage+ 8))
     (cffi:with-foreign-object (actions :uint64
                                (/ +process-spawn-file-actions-storage+ 8))
+     (cffi:with-foreign-object (sigdefault :uint64
+                                (/ +process-spawn-sigset-storage+ 8))
       (cffi:with-foreign-object (pid :int)
         (let ((attributes-ready nil)
               (actions-ready nil))
@@ -206,9 +222,26 @@ race, which is necessary for pipelines and foreground job control."
                  (process--spawn-check
                   (process--spawnattr-setpgroup attributes process-group)
                   program "set process group")
+                 ;; A foreground child must see the job-control signals at
+                 ;; their default disposition.  CCLSH ignores SIGTTIN and
+                 ;; SIGTTOU for itself, and POSIX_SPAWN would otherwise leak
+                 ;; that SIG_IGN into the child, breaking terminal programs
+                 ;; (e.g. Emacs) that inspect these dispositions at startup.
                  (process--spawn-check
-                  (process--spawnattr-setflags attributes
-                                               +process-spawn-setpgroup+)
+                  (process--sigemptyset sigdefault) program "initialize signal set")
+                 (dolist (number (list +process-sigttin+ +process-sigttou+
+                                      +process-sigtstp+))
+                   (process--spawn-check
+                    (process--sigaddset sigdefault number)
+                    program "add default signal"))
+                 (process--spawn-check
+                  (process--spawnattr-setsigdefault attributes sigdefault)
+                  program "set default signal dispositions")
+                 (process--spawn-check
+                  (process--spawnattr-setflags
+                   attributes
+                   (logior +process-spawn-setpgroup+
+                           +process-spawn-setsigdef+))
                   program "enable process group")
                  (process--spawn-check
                   (process--file-actions-init actions)
@@ -242,7 +275,7 @@ race, which is necessary for pipelines and foreground job control."
             (when actions-ready
               (process--file-actions-destroy actions))
             (when attributes-ready
-              (process--spawnattr-destroy attributes))))))))
+              (process--spawnattr-destroy attributes)))))))))
 
 (defun shell-process-spawn (program arguments
                             &key (process-group 0) (fd0 0) (fd1 1) (fd2 2)

@@ -40,3 +40,17 @@ expect_output 'cba
 0' -c '(pipe (echo "abc") (rev))'
 expect_output '__SBCL_ARGV__("tests/sbcl-argv.sh.lisp" "--batch" "-R" "report")__' \
     tests/sbcl-argv.sh.lisp --batch -R report
+
+# Verify the actual child dispositions, not just the host's numeric flags.
+check_directory=$(mktemp -d "${TMPDIR:-/tmp}/cclsh-sbcl-check.XXXXXX")
+trap 'rm -rf -- "$check_directory"' 0
+"${CC:-cc}" -std=c99 -Wall -Wextra -Werror tests/child-signals.c \
+    -o "$check_directory/child-signals"
+expect_output default-child-signals -c "$check_directory/child-signals"
+expect_output 'compat-ok' -c \
+    '(let ((p (ccl:run-program "/bin/sh" (list "-c" "printf compat-ok") :output :stream))) (write-string (read-line (ccl:external-process-output-stream p))) (assert (equal (multiple-value-list (ccl:external-process-status p)) (list :exited 0))) (values))'
+
+touch "$check_directory/target"
+ln -s target "$check_directory/alias"
+expect_output "$check_directory/alias" -c \
+    "(progn (write-line (first (glob \"$check_directory/ali*\"))) (values))"
