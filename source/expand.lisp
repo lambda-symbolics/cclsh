@@ -200,7 +200,7 @@ implicit directory change is safe only when the final command has one word."
                     #+ccl
                     (directory wild :directories t :files t :follow-links nil)
                     #+sbcl
-                    (directory wild))))
+                    (directory wild :resolve-symlinks nil))))
     (let ((files          nil)
           (subdirectories nil))
       (dolist (entry entries)
