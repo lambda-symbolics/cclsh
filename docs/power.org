@@ -51,8 +51,11 @@ make sbcl-check SBCL=sbcl
 The Linux idle test checks an isolated supervisor and an actually leased
 terminal relay through =/proc= voluntary context-switch counters, then checks
 terminal resize propagation. On the development host both counters increased
-by zero over 1.2 seconds. This measures those processes' scheduler activity,
-not battery watts, CPU package residency, or all Lisp runtime threads.
+by zero over 1.2 seconds. Across all threads, each of the two CCL workers
+still recorded four voluntary context switches during the same interval.
+The test reports those separately; removing the broker timers does not
+eliminate all Lisp runtime activity. These counters measure scheduler
+activity, not battery watts or CPU package residency.
 
 The SBCL checks also exercise child signal dispositions, the process
 compatibility wrapper, and symlink-preserving globbing. They pass on Linux
