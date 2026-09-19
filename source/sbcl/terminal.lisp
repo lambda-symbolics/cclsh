@@ -17,8 +17,8 @@
   (descriptor :int) (request :unsigned-long) (argument :pointer))
 
 (defconstant +winsize-ioctl+
-  #+darwin #x40087468
-  #-darwin #x5413
+  #+(or darwin netbsd freebsd openbsd) #x40087468
+  #-(or darwin netbsd freebsd openbsd) #x5413
   "TIOCGWINSZ for the supported Unix hosts.")
 
 (defconstant +sigcont+ sb-posix:sigcont)
@@ -105,13 +105,18 @@
     (sb-posix:syscall-error () nil)))
 
 (defun terminal--copy-termios (attributes)
-  "Return an independent copy of the SB-POSIX terminal ATTRIBUTES object."
-  (make-instance 'sb-posix:termios
-                 :iflag (sb-posix:termios-iflag attributes)
-                 :oflag (sb-posix:termios-oflag attributes)
-                 :cflag (sb-posix:termios-cflag attributes)
-                 :lflag (sb-posix:termios-lflag attributes)
-                 :cc (copy-seq (sb-posix:termios-cc attributes))))
+  "Return an independent copy of the SB-POSIX terminal ATTRIBUTES object.
+   The BSD termios keeps the line speeds outside the flag words; copy them
+   too, because applying a speed of zero hangs up the terminal there."
+  (let ((copy (make-instance 'sb-posix:termios
+                             :iflag (sb-posix:termios-iflag attributes)
+                             :oflag (sb-posix:termios-oflag attributes)
+                             :cflag (sb-posix:termios-cflag attributes)
+                             :lflag (sb-posix:termios-lflag attributes)
+                             :cc (copy-seq (sb-posix:termios-cc attributes)))))
+    (sb-posix:cfsetispeed (sb-posix:cfgetispeed attributes) copy)
+    (sb-posix:cfsetospeed (sb-posix:cfgetospeed attributes) copy)
+    copy))
 
 (defun terminal--set-termios (attributes)
   "Apply ATTRIBUTES immediately. Return success and errno."
