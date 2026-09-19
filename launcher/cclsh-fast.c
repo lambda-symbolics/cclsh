@@ -92,6 +92,22 @@ static volatile sig_atomic_t daemon_stop_requested;
 static volatile sig_atomic_t relay_signal;
 static volatile sig_atomic_t relay_resize;
 
+/* Atomically unblock handled signals while sleeping. Keeping them blocked
+ * during state inspection avoids losing a child exit or resize just before
+ * entering an indefinite wait. Only real lifecycle deadlines need a timer. */
+static int
+wait_for_events(struct pollfd *items, nfds_t count, int milliseconds,
+                const sigset_t *mask)
+{
+    struct timespec timeout;
+    if (milliseconds < 0) {
+        return ppoll(items, count, NULL, mask);
+    }
+    timeout.tv_sec = milliseconds / 1000;
+    timeout.tv_nsec = (milliseconds % 1000) * 1000000L;
+    return ppoll(items, count, &timeout, mask);
+}
+
 static void close_inherited_descriptors(int preserved_descriptor);
 static void reset_relay_handlers(void);
 
@@ -858,7 +874,7 @@ worker_poll_starting(struct worker *workers)
             continue;
         }
         if (worker->started_at < 0 ||
-            monotonic_milliseconds() - worker->started_at > 3000) {
+            monotonic_milliseconds() - worker->started_at >= 3000) {
             worker_discard(worker);
             continue;
         }
@@ -1539,6 +1555,7 @@ daemon_loop(int notify_descriptor)
     int notified = 0;
     int index;
     struct sigaction action;
+    sigset_t blocked, previous_mask;
     memset(workers, 0, sizeof(workers));
     for (index = 0; index < max_workers; index++) {
         workers[index].master_fd = -1;
@@ -1561,11 +1578,22 @@ daemon_loop(int notify_descriptor)
     action.sa_handler = daemon_child_handler;
     sigaction(SIGCHLD, &action, NULL);
     signal(SIGPIPE, SIG_IGN);
+    sigemptyset(&blocked);
+    sigaddset(&blocked, SIGTERM);
+    sigaddset(&blocked, SIGINT);
+    sigaddset(&blocked, SIGHUP);
+    sigaddset(&blocked, SIGCHLD);
+    if (sigprocmask(SIG_BLOCK, &blocked, &previous_mask) < 0) {
+        close(listener);
+        close(lock_descriptor);
+        return 1;
+    }
     ensure_ready_worker(workers);
     while (!daemon_stop_requested) {
-        struct pollfd items[1 + max_workers];
+        struct pollfd items[1 + 3 * max_workers];
         int item_count = 1;
         int result;
+        int timeout = -1;
         worker_reap(workers);
         worker_poll_starting(workers);
         ensure_ready_worker(workers);
@@ -1589,7 +1617,31 @@ daemon_loop(int notify_descriptor)
                 item_count++;
             }
         }
-        result = poll(items, (nfds_t)item_count, 20);
+        /* Starting workers notify on their control socket. Watch the PTY too
+         * so unexpected startup output still rejects the worker promptly. */
+        for (index = 0; index < max_workers; index++) {
+            if (workers[index].state == worker_starting) {
+                int64_t remaining = workers[index].started_at + 3000 -
+                                    monotonic_milliseconds();
+                int deadline = remaining > 0 ? (int)remaining : 0;
+                if (timeout < 0 || deadline < timeout) {
+                    timeout = deadline;
+                }
+                items[item_count++] = (struct pollfd){
+                    workers[index].control_fd, POLLIN, 0};
+                items[item_count++] = (struct pollfd){
+                    workers[index].master_fd, POLLIN, 0};
+            }
+        }
+        /* Retry a failed spawn with backoff, without waking healthy idle
+         * daemons or saturated daemons that cannot allocate another slot. */
+        if (worker_find_slot(workers) >= 0 &&
+            worker_count(workers, worker_ready) == 0 &&
+            worker_count(workers, worker_starting) == 0) {
+            timeout = 1000;
+        }
+        result = wait_for_events(items, (nfds_t)item_count, timeout,
+                                 &previous_mask);
         if (result < 0 && errno != EINTR) {
             daemon_stop_requested = 1;
             continue;
@@ -1639,6 +1691,7 @@ daemon_loop(int notify_descriptor)
     }
     unlink(socket_path);
     close(lock_descriptor);
+    sigprocmask(SIG_SETMASK, &previous_mask, NULL);
     return 0;
 }
 
@@ -2181,10 +2234,20 @@ relay_session(int terminal_fd, int master_fd, int status_fd)
     int relay_incomplete = 0;
     int exit_status = 70;
     int64_t drain_deadline = -1;
+    sigset_t blocked, previous_mask;
+    sigemptyset(&blocked);
+    sigaddset(&blocked, SIGWINCH);
+    sigaddset(&blocked, SIGHUP);
+    sigaddset(&blocked, SIGTERM);
+    sigaddset(&blocked, SIGINT);
+    sigaddset(&blocked, SIGQUIT);
+    if (sigprocmask(SIG_BLOCK, &blocked, &previous_mask) < 0) {
+        return 70;
+    }
     while (!relay_signal) {
         struct pollfd items[4];
         int result;
-        int timeout = 100;
+        int timeout = -1;
         if ((status_received || status_closed) && master_read_eof &&
             output.length == 0) {
             break;
@@ -2198,9 +2261,7 @@ relay_session(int terminal_fd, int master_fd, int status_fd)
                 relay_incomplete = 1;
                 break;
             }
-            if (remaining < timeout) {
-                timeout = (int)remaining;
-            }
+            timeout = (int)remaining;
         }
         items[0].fd = terminal_fd;
         items[0].events = (!master_write_closed && !status_received &&
@@ -2227,16 +2288,16 @@ relay_session(int terminal_fd, int master_fd, int status_fd)
         items[3].fd = status_closed ? -1 : status_fd;
         items[3].events = status_closed ? 0 : POLLIN;
         items[3].revents = 0;
-        result = poll(items, 4, timeout);
-        if (result < 0 && errno != EINTR) {
-            break;
-        }
         if (relay_resize) {
             struct winsize size;
             relay_resize = 0;
             if (ioctl(terminal_fd, TIOCGWINSZ, &size) == 0) {
                 ioctl(master_fd, TIOCSWINSZ, &size);
             }
+        }
+        result = wait_for_events(items, 4, timeout, &previous_mask);
+        if (result < 0 && errno != EINTR) {
+            break;
         }
         if (result <= 0) {
             continue;
@@ -2361,6 +2422,7 @@ relay_session(int terminal_fd, int master_fd, int status_fd)
             }
         }
     }
+    sigprocmask(SIG_SETMASK, &previous_mask, NULL);
     if (relay_signal) {
         return 128 + relay_signal;
     }
