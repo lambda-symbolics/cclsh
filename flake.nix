@@ -48,7 +48,7 @@
         name = "clinedi-${builtins.substring 0 7 clinediRev}";
         url = "https://github.com/lambda-symbolics/clinedi.git";
         rev = clinediRev;
-        hash = "sha256-syceRls7XeP8X2mNUmtbUESSKtv0v7/2JVfWOXEzNx4=";
+        hash = "sha256-u2antKUlqo1s5fStyJXUIWdrpjmS08CaWYndsUfDU/o=";
         leaveDotGit = true;
       };
 

@@ -190,7 +190,7 @@ in the calling thread and restore the exact prior mask after FUNCTION."
 
 (defun terminal-semantic-marker (marker &optional (status 0))
   "Return Clinedi's OSC 133 sequence for MARKER and STATUS."
-  (clinedi:semantic-prompt-marker-sequence marker status))
+  (clinedi:semantic-prompt-marker-sequence marker :status status))
 
 
 (defun terminal-write-semantic-marker
