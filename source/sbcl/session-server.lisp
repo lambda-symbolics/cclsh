@@ -258,6 +258,30 @@
           (remhash pid (server-session-children session))))
       process)))
 
+;;; Lisp code in a session (startup files, prompt renderers, libraries) may
+;;; start programs itself with SB-EXT:RUN-PROGRAM, usually through
+;;; UIOP:RUN-PROGRAM.  Those children are forked by this server process, whose
+;;; cwd and environment are not the session's, so a prompt helper would see
+;;; the directory the server started in after every cd.  Inside a session the
+;;; encapsulation below supplies the session's cwd and environment unless the
+;;; caller passed its own.
+
+(defun server--keyword-supplied-p (keys keyword)
+  "True when the plist KEYS names KEYWORD, whatever its value."
+  (loop for key in keys by #'cddr thereis (eq key keyword)))
+
+(defun server--session-run-program (function program arguments &rest keys)
+  "Run FUNCTION (SB-EXT:RUN-PROGRAM) with session defaults inside a session."
+  (when ccl::*session-directory*
+    (unless (server--keyword-supplied-p keys :directory)
+      (setf keys (list* :directory ccl::*session-directory* keys)))
+    (unless (or (server--keyword-supplied-p keys :environment)
+                (server--keyword-supplied-p keys :env)
+                (null ccl::*session-environment-function*))
+      (setf keys (list* :environment (funcall ccl::*session-environment-function*)
+                        keys))))
+  (apply function program arguments keys))
+
 (defun server--process-operation (session operation &rest arguments)
   "Implement the shell's process and terminal adapters through the native peer."
   (case operation
@@ -418,6 +442,9 @@
     ;; Arbitrary Lisp OPEN calls share this conservative process-wide mask.
     (sb-posix:umask #o077)
     (terminal-signals-setup)
+    (unless (sb-int:encapsulated-p 'sb-ext:run-program 'cclsh-session)
+      (sb-int:encapsulate 'sb-ext:run-program 'cclsh-session
+                          #'server--session-run-program))
     (unwind-protect
         (loop until *server-stopping*
               for socket = (server--accept listener)
@@ -436,5 +463,6 @@
           (ignore-errors (sb-thread:join-thread (server-session-thread session)
                                                :timeout 2 :default nil))))
       (fd-close listener)
+      (sb-int:unencapsulate 'sb-ext:run-program 'cclsh-session)
       (ignore-errors (delete-file path))))
   (values))

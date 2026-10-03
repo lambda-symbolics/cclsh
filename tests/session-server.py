@@ -100,6 +100,17 @@ def main():
                 assert f"MARK={index} CWD={directory}/session-{index}!".encode() in output, output
                 output = terminal.command('/bin/pwd')
                 assert f"{directory}/session-{index}".encode() in output, output
+                # Programs started from Lisp (prompt helpers, libraries) are
+                # forked by the server, but must still see the session's state.
+                output = terminal.command(
+                    '(format t "LCWD=~a!~%" (string-right-trim (list #\\Newline)'
+                    ' (uiop:run-program (list "/bin/pwd") :output :string)))')
+                assert f"LCWD={directory}/session-{index}!".encode() in output, output
+                output = terminal.command(
+                    '(format t "LMARK=~a!~%" (string-right-trim (list #\\Newline)'
+                    ' (uiop:run-program (list "/bin/sh" "-c" "echo $SESSION_MARK")'
+                    ' :output :string)))')
+                assert f"LMARK={index}!".encode() in output, output
             print("Cwd and child environments are independent", flush=True)
 
             for form in ('(error "recoverable failure")', '(list . .)',

@@ -95,4 +95,8 @@ is running must use the session-aware accessors: =(getenv "DISPLAY")= reads
 the session environment, and =(terminal-name)= returns the path of the
 terminal the session reads from (for example =/dev/constty= for a console
 autologin), where a raw =ttyname(0)= reports nothing.  Commands started with
-=run= are spawned by the client onto that terminal.
+=run= are spawned by the client onto that terminal.  Programs that Lisp code
+starts itself, through =sb-ext:run-program= or =uiop:run-program= (a prompt
+renderer calling Starship, for example), are forked by the server, but inside
+a session they still get the session's cwd and environment unless the caller
+passes =:directory= or =:environment=.
