@@ -269,12 +269,15 @@ done:
     return stopping ? 128 + stopping : result;
 }
 
+static int management_timeout_ms = 5000;
+
 static int management(const char *path, int stop, int quiet)
 {
     char body[sh_capacity];
     int fds[8], socket = sh_connect(path);
     uint32_t type, token, length, count;
     if (socket < 0) return 1;
+    sh_set_timeout(socket, management_timeout_ms);
     if (sh_send(socket, stop ? sh_stop : sh_status, 0, NULL, 0, NULL, 0) < 0 ||
         sh_receive(socket, &type, &token, body, &length, fds, &count) < 0) {
         close(socket); return 1;
@@ -294,7 +297,38 @@ int main(int argc, char **argv)
     if (argc == 4 && !strcmp(argv[1], "start")) {
         pid_t pid;
         int index;
+        char pid_path[4096];
+        /* A quick probe: a healthy server answers at once. */
+        management_timeout_ms = 1000;
         if (management(argv[2], 0, 1) == 0) return 0;
+        management_timeout_ms = 5000;
+        /*
+         * No usable server.  A stale one still holding the socket and the
+         * lock would make the new server fail: retire it by the pid it
+         * left next to the socket (its own user's process only).
+         */
+        if (sh_pid_file(argv[2], pid_path, sizeof(pid_path)) == 0) {
+            FILE *f = fopen(pid_path, "r");
+            long stale = 0;
+            if (f) {
+                if (fscanf(f, "%ld", &stale) != 1) stale = 0;
+                fclose(f);
+            }
+            if (stale > 1 && stale != getpid() && kill((pid_t)stale, 0) == 0) {
+                int tries;
+                kill((pid_t)stale, SIGTERM);
+                for (tries = 0; tries < 20 && kill((pid_t)stale, 0) == 0; tries++)
+                    poll(NULL, 0, 100);
+                if (kill((pid_t)stale, 0) == 0) {
+                    kill((pid_t)stale, SIGKILL);
+                    for (tries = 0; tries < 20 && kill((pid_t)stale, 0) == 0; tries++)
+                        poll(NULL, 0, 100);
+                }
+                fprintf(stderr, "cclshd: retired unresponsive server pid %ld\n", stale);
+            }
+            unlink(pid_path);
+        }
+        unlink(argv[2]);
         pid = fork();
         if (pid < 0) return 1;
         if (pid == 0) {

@@ -17,6 +17,8 @@ int sh_receive(int socket, uint32_t *type, uint32_t *token, void *body,
                uint32_t *length, int *descriptors, uint32_t *count);
 int sh_listen(const char *path);
 int sh_accept_peer(int listener);
+void sh_set_timeout(int socket, int milliseconds);
+int sh_pid_file(const char *path, char *buffer, size_t size);
 int sh_connect(const char *path);
 int sh_shutdown(int descriptor);
 

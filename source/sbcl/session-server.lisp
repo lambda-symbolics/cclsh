@@ -449,11 +449,23 @@
         (loop until *server-stopping*
               for socket = (server--accept listener)
               do (when (minusp socket)
-                   (unless *server-stopping* (error "Accept failed: ~d" socket))
+                   ;; Only the listener itself failing ends the service
+                   ;; (bad peers and transient errors are handled below
+                   ;; it, in sh_accept_peer).
+                   (unless *server-stopping*
+                     (format *error-output* "cclshd: accept failed: ~d~%"
+                             socket))
                    (return))
                  (sb-thread:make-thread (let ((fd socket))
                                           (lambda () (server--connection fd)))
                                         :name "cclsh session"))
+      ;; Stop listening first: clients fail at once instead of waiting
+      ;; for a reply that never comes, and a replacement server can bind.
+      (setf *server-stopping* t)
+      (ignore-errors (server--shutdown listener))
+      (fd-close listener)
+      (ignore-errors (delete-file path))
+      (ignore-errors (delete-file (concatenate 'string path ".pid")))
       (let ((sessions (ccl:with-lock-grabbed (*server-lock*)
                         (loop for session being the hash-values of *server-sessions*
                               collect session))))
@@ -462,7 +474,8 @@
         (dolist (session sessions)
           (ignore-errors (sb-thread:join-thread (server-session-thread session)
                                                :timeout 2 :default nil))))
-      (fd-close listener)
-      (sb-int:unencapsulate 'sb-ext:run-program 'cclsh-session)
-      (ignore-errors (delete-file path))))
+      (sb-int:unencapsulate 'sb-ext:run-program 'cclsh-session)))
+  ;; Whatever a session thread is still doing, the server is over: a
+  ;; lingering process would hold the lock and the socket's clients.
+  (sb-ext:exit :code 0 :abort t)
   (values))

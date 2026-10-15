@@ -11,6 +11,7 @@
 #include <sys/time.h>
 #include <sys/un.h>
 #include <unistd.h>
+#include <poll.h>
 
 #ifndef MSG_NOSIGNAL
 #define MSG_NOSIGNAL 0
@@ -151,6 +152,18 @@ int sh_listen(const char *path)
     error = bind(descriptor, (struct sockaddr *)&address, sizeof(address));
     umask(mask);
     if (error < 0 || listen(descriptor, 32) < 0) { error = errno; goto failure; }
+    {
+        char pid_path[sizeof(address.sun_path) + 5];
+        if (sh_pid_file(path, pid_path, sizeof(pid_path)) == 0) {
+            int fd = open(pid_path, O_CREAT | O_WRONLY | O_TRUNC | O_NOFOLLOW | O_CLOEXEC, 0600);
+            if (fd >= 0) {
+                char text[32];
+                int n = snprintf(text, sizeof(text), "%ld\n", (long)getpid());
+                if (n > 0) (void)write(fd, text, (size_t)n);
+                close(fd);
+            }
+        }
+    }
     return descriptor;
 failure:
     if (descriptor >= 0) close(descriptor);
@@ -158,15 +171,43 @@ failure:
     return -error;
 }
 
+/*
+ * Accept the next connection from the socket's owner.  A connection that
+ * is not the owner's, or that was aborted before we got to it, is dropped
+ * and the wait continues: only a failure of the listener itself returns an
+ * error.  (A client that gave up while the server was starting used to
+ * come back as -EACCES here and take the whole server down.)
+ */
 int sh_accept_peer(int listener)
 {
     int descriptor;
-    do { descriptor = accept(listener, NULL, NULL); }
-    while (descriptor < 0 && errno == EINTR);
-    if (descriptor < 0) return -errno;
-    if (!peer_is_owner(descriptor)) { close(descriptor); return -EACCES; }
-    fcntl(descriptor, F_SETFD, FD_CLOEXEC);
-    return descriptor;
+    for (;;) {
+        descriptor = accept(listener, NULL, NULL);
+        if (descriptor < 0) {
+            if (errno == EINTR || errno == ECONNABORTED || errno == EAGAIN)
+                continue;
+            if (errno == EMFILE || errno == ENFILE) { poll(NULL, 0, 100); continue; }
+            return -errno;
+        }
+        if (!peer_is_owner(descriptor)) { close(descriptor); continue; }
+        fcntl(descriptor, F_SETFD, FD_CLOEXEC);
+        return descriptor;
+    }
+}
+
+/* Shorten the reply wait on a connected socket (probes). */
+void sh_set_timeout(int socket, int milliseconds)
+{
+    struct timeval timeout = {milliseconds / 1000, (milliseconds % 1000) * 1000};
+    setsockopt(socket, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+    setsockopt(socket, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
+}
+
+/* The listening server's pid, next to the socket, so that a stale server
+ * can be replaced by "start" (the flock alone identifies no process). */
+int sh_pid_file(const char *path, char *buffer, size_t size)
+{
+    return snprintf(buffer, size, "%s.pid", path) < (int)size ? 0 : -ENAMETOOLONG;
 }
 
 int sh_connect(const char *path)

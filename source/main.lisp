@@ -485,7 +485,14 @@
 
 #+sbcl
 (defun shell-toplevel ()
-  "Run the SBCL source launcher with the normal cclsh argument protocol."
+  "Run the SBCL source launcher with the normal cclsh argument protocol.
+   With CCLSH_SERVER_MODE=run, serve sessions from this image instead (the
+   saved image starts in a fraction of a second; loading the systems
+   through ASDF took the first terminal of a login seconds)."
+  (when (equal (getenv "CCLSH_SERVER_MODE") "run")
+    (server-run (or (getenv "CCLSH_SERVER_SOCKET")
+                    (error "Missing CCLSH_SERVER_SOCKET")))
+    (shell-quit 0))
   (let ((arguments (rest (shell--host-arguments))))
     (with-terminal-control-signals
       (handler-case

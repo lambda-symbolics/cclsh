@@ -2,13 +2,19 @@
 set -eu
 repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 operation=${1:-attach}
-directory=${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}/cclshd-$(id -u)
+# One directory per user whatever the session's environment says: a daemon
+# started at boot or over ssh must be the one a desktop terminal finds.
+directory=${TMPDIR:-/tmp}/cclshd-$(id -u)
 if [ ! -d "$directory" ]; then mkdir -m 700 "$directory"; fi
 socket=${CCLSH_DAEMON_SOCKET:-$directory/server.sock}
 case "$operation" in
     run)
+        # The saved image when there is one (CCLSH_IMAGE), else the source
+        # launcher.
+        server=${CCLSH_IMAGE:-}
+        [ -n "$server" ] && [ -x "$server" ] || server="$repo/scripts/cclsh-sbcl"
         exec env CCLSH_SERVER_MODE=run CCLSH_SERVER_SOCKET="${2:-$socket}" \
-            "$repo/scripts/cclsh-sbcl"
+            "$server"
         ;;
     start) exec "$repo/cclsh-session" start "$socket" "$repo/scripts/cclshd" ;;
     status|stop) exec "$repo/cclsh-session" "$operation" "$socket" ;;
