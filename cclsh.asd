@@ -1,5 +1,5 @@
 (defsystem "cclsh"
-  :version "1.7.0"
+  :version "1.8.0"
   :author "Lukáš Hozda"
   :license "ISC"
   :encoding :utf-8

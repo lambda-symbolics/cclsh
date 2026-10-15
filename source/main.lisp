@@ -9,7 +9,7 @@
 
 (in-package #:cclsh)
 
-(defparameter *cclsh-version* "1.7.0"
+(defparameter *cclsh-version* "1.8.0"
   "The cclsh version reported by --version.")
 
 (defparameter +launcher-path-variable+ "CCLSH_LAUNCHER_PATH"
