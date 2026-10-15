@@ -1,6 +1,7 @@
 #ifndef CCLSH_SESSION_IPC_H
 #define CCLSH_SESSION_IPC_H
 
+#include <stddef.h>
 #include <stdint.h>
 
 /* Same-host protocol: native uint32 fields, UTF-8 NUL-terminated strings,
