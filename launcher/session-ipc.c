@@ -19,6 +19,8 @@
 
 static int server_lock = -1;
 
+int sh_pid_file(const char *path, char *buffer, size_t size);
+
 static int peer_is_owner(int descriptor)
 {
 #ifdef __linux__
