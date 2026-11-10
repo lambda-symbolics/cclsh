@@ -1077,6 +1077,58 @@
                text)
   (check-equal "ordered nested run retains successful status" 0 status))
 
+(let* ((root
+         (uiop:ensure-directory-pathname
+          (string-trim '(#\Newline #\Return)
+                       (uiop:run-program
+                        '("mktemp" "-d" "/tmp/cclsh-check-symlink.XXXXXX")
+                        :output ':string))))
+       (target (namestring (merge-pathnames "dispatcher" root)))
+       (proxy (namestring (merge-pathnames "cclsh-check-proxy" root)))
+       (old-path (cclsh:getenv "PATH"))
+       (old-directory (ccl:current-directory))
+       (old-defaults *default-pathname-defaults*))
+  (unwind-protect
+      (progn
+        (check-write-utf8-file
+         target (format nil "#!/bin/sh~%printf '%s' \"$0\"~%"))
+        (uiop:run-program (list "chmod" "755" target))
+        (uiop:run-program (list "ln" "-s" "dispatcher" proxy))
+        (cclsh:setenv "PATH" (concatenate 'string (namestring root) ":" (or old-path "")))
+        (check-equal "PATH lookup preserves a multicall symlink name"
+                     proxy (cclsh::path-search "cclsh-check-proxy"))
+        (check-equal "cached PATH lookup preserves a multicall symlink name"
+                     proxy (cclsh::path-search "cclsh-check-proxy"))
+        (check-equal "absolute command resolution preserves a multicall symlink name"
+                     (list ':external proxy)
+                     (multiple-value-list (cclsh::command-resolve proxy)))
+        (multiple-value-bind (text status)
+            (cclsh:capture (check-run-program "cclsh-check-proxy"))
+          (check-equal "PATH command executes with the symlink invocation name" proxy text)
+          (check-equal "symlinked PATH command succeeds" 0 status))
+        (multiple-value-bind (text status)
+            (cclsh:capture (check-run-program proxy))
+          (check-equal "absolute command executes with the symlink invocation name" proxy text)
+          (check-equal "absolute symlinked command succeeds" 0 status))
+        (setf (ccl:current-directory) root)
+        (setf *default-pathname-defaults* root)
+        (let ((relative (namestring (merge-pathnames "./cclsh-check-proxy" root))))
+          (check-equal "relative command resolution preserves a multicall symlink name"
+                       (list ':external relative)
+                       (multiple-value-list
+                        (cclsh::command-resolve "./cclsh-check-proxy")))
+          (multiple-value-bind (text status)
+              (cclsh:capture (check-run-program "./cclsh-check-proxy"))
+            (check-equal "relative command executes with the symlink invocation name"
+                         relative text)
+            (check-equal "relative symlinked command succeeds" 0 status))))
+    (setf (ccl:current-directory) old-directory)
+    (setf *default-pathname-defaults* old-defaults)
+    (if old-path
+        (cclsh:setenv "PATH" old-path)
+        (cclsh::unsetenv "PATH"))
+    (uiop:delete-directory-tree root :validate t :if-does-not-exist ':ignore)))
+
 
 ;;;; -- Implicit directory commands --
 

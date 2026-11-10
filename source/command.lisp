@@ -1214,12 +1214,12 @@ argument unchanged."
           do (setf start (1+ split)))))
 
 (defun path--search-uncached (name)
-  "Scan the PATH directories for an executable file called NAME."
+  "Scan PATH for NAME, preserving the executable's invocation name."
   (loop for directory in (path-directories)
         for candidate = (concatenate 'string directory "/" name)
         for found = (ignore-errors (probe-file candidate))
         when (and found (not (pathname-directory-form-p found)))
-          return (namestring found)))
+          return (namestring (merge-pathnames candidate))))
 
 (defun path-search (name)
   "Find the executable NAME in PATH. Returns a namestring or NIL.
@@ -1254,7 +1254,7 @@ argument unchanged."
   (cond ((find #\/ word)
          (let ((found (ignore-errors (probe-file word))))
            (if (and found (not (pathname-directory-form-p found)))
-               (values ':external (namestring found))
+               (values ':external (namestring (merge-pathnames word)))
                (values ':unknown nil))))
         (t
          (let ((symbol (find-symbol (string-upcase word) *package*)))
