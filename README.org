@@ -6,7 +6,8 @@ Lisp forms share one live image, so the boundary between shell use and Lisp is
 small and explicit.
 
 The complete saved-image distribution targets CCL on Linux x86-64. The normal
-source launcher also supports SBCL on macOS and Linux.
+source launcher also supports SBCL on macOS and Linux. On macOS the Nix flake
+packages that SBCL launcher, so =nix run= works there too.
 
 It is not a POSIX shell: command strings, scripts, pipelines and redirection use cclsh syntax.
 

@@ -3,12 +3,16 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    # The macOS package tracks the darwin-tested channel separately so its
+    # SBCL can move without rebuilding the Linux CCL package.
+    nixpkgs-darwin.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
   };
 
   outputs =
     {
       self,
       nixpkgs,
+      nixpkgs-darwin,
     }:
     let
       system = "x86_64-linux";
@@ -97,41 +101,6 @@
         hash = "sha256-q41Ywy0qIllOg/oaCO/ts3A1KfKMnW2Rw3KAv5DwVGg=";
       };
 
-      quicklispTar = pkgs.fetchurl {
-        url = "https://beta.quicklisp.org/client/2021-02-13/quicklisp.tar";
-        hash = "sha256-qKPIyRtR3RhRdautTXw5meu04lIL5abO4hJwNaxsh74=";
-      };
-
-      quicklispSetup = pkgs.fetchurl {
-        url = "https://beta.quicklisp.org/client/2021-02-11/setup.lisp";
-        hash = "sha256-VJ/j5+DyZp2u3phDfJnNYOAsC4U209E1yaqdNG7ZUbY=";
-      };
-
-      quicklispAsdf = pkgs.fetchurl {
-        url = "https://beta.quicklisp.org/asdf/3.2.1/asdf.lisp";
-        hash = "sha256-UZEvP3wsYsIE9RXZc0bVYBFSg5m78KdqEjMYND69i/A=";
-      };
-
-      quicklispClientInfo = pkgs.fetchurl {
-        url = "https://beta.quicklisp.org/client/2021-02-13/client-info.sexp";
-        hash = "sha256-tPUVxe0gTZ+k6oY35gwLEldWCfRQ8mkZ2/uDXuKZM+A=";
-      };
-
-      quicklispDistInfo = pkgs.fetchurl {
-        url = "https://beta.quicklisp.org/dist/quicklisp/2026-01-01/distinfo.txt";
-        hash = "sha256-/ENut1gsi2ny7IfXe9qkCHUCMo3sCfIcV214+si/XhU=";
-      };
-
-      quicklispReleases = pkgs.fetchurl {
-        url = "https://beta.quicklisp.org/dist/quicklisp/2026-01-01/releases.txt";
-        hash = "sha256-nK1ZOY52ADLeAFPK/P3PFutDfK8aINZWaKjjtyZIXaQ=";
-      };
-
-      quicklispSystems = pkgs.fetchurl {
-        url = "https://beta.quicklisp.org/dist/quicklisp/2026-01-01/systems.txt";
-        hash = "sha256-y4MJMhhAiHtUL6hT3E/pX5pOotfKAoxSHTK2fSvfUcc=";
-      };
-
       quicklispProjectArchives = [
         (pkgs.fetchurl {
           url = "https://beta.quicklisp.org/archive/alexandria/2024-10-12/alexandria-20241012-git.tgz";
@@ -159,10 +128,46 @@
         })
       ];
 
-      quicklispTemplate =
-        pkgs.runCommand "cclsh-quicklisp-2026-01-01"
+      quicklispTemplateFor = p:
+        let
+          quicklispTar = p.fetchurl {
+            url = "https://beta.quicklisp.org/client/2021-02-13/quicklisp.tar";
+            hash = "sha256-qKPIyRtR3RhRdautTXw5meu04lIL5abO4hJwNaxsh74=";
+          };
+
+          quicklispSetup = p.fetchurl {
+            url = "https://beta.quicklisp.org/client/2021-02-11/setup.lisp";
+            hash = "sha256-VJ/j5+DyZp2u3phDfJnNYOAsC4U209E1yaqdNG7ZUbY=";
+          };
+
+          quicklispAsdf = p.fetchurl {
+            url = "https://beta.quicklisp.org/asdf/3.2.1/asdf.lisp";
+            hash = "sha256-UZEvP3wsYsIE9RXZc0bVYBFSg5m78KdqEjMYND69i/A=";
+          };
+
+          quicklispClientInfo = p.fetchurl {
+            url = "https://beta.quicklisp.org/client/2021-02-13/client-info.sexp";
+            hash = "sha256-tPUVxe0gTZ+k6oY35gwLEldWCfRQ8mkZ2/uDXuKZM+A=";
+          };
+
+          quicklispDistInfo = p.fetchurl {
+            url = "https://beta.quicklisp.org/dist/quicklisp/2026-01-01/distinfo.txt";
+            hash = "sha256-/ENut1gsi2ny7IfXe9qkCHUCMo3sCfIcV214+si/XhU=";
+          };
+
+          quicklispReleases = p.fetchurl {
+            url = "https://beta.quicklisp.org/dist/quicklisp/2026-01-01/releases.txt";
+            hash = "sha256-nK1ZOY52ADLeAFPK/P3PFutDfK8aINZWaKjjtyZIXaQ=";
+          };
+
+          quicklispSystems = p.fetchurl {
+            url = "https://beta.quicklisp.org/dist/quicklisp/2026-01-01/systems.txt";
+            hash = "sha256-y4MJMhhAiHtUL6hT3E/pX5pOotfKAoxSHTK2fSvfUcc=";
+          };
+        in
+        p.runCommand "cclsh-quicklisp-2026-01-01"
           {
-            nativeBuildInputs = [ pkgs.gnutar ];
+            nativeBuildInputs = [ p.gnutar ];
           }
           ''
             mkdir -p "$out"
@@ -176,6 +181,8 @@
             cp ${quicklispSystems} "$out/dists/quicklisp/systems.txt"
             touch "$out/dists/quicklisp/enabled.txt"
           '';
+
+      quicklispTemplate = quicklispTemplateFor pkgs;
 
       patchedCcl = pkgs.ccl.overrideAttrs (old: {
         patches = (old.patches or [ ]) ++ [
@@ -345,6 +352,90 @@
             old.buildPhase;
       });
 
+      # macOS has no CCLSH CCL image; it runs the SBCL source launcher over
+      # the same locked sibling sources. On first use without ~/quicklisp,
+      # the wrapper seeds the packaged Quicklisp template where saved images
+      # put theirs; Quicklisp then fetches the SBCL host libraries.
+      darwinSystems = [
+        "aarch64-darwin"
+        "x86_64-darwin"
+      ];
+
+      sbclLauncherFor =
+        darwinSystem:
+        let
+          p = import nixpkgs-darwin { system = darwinSystem; };
+          template = quicklispTemplateFor p;
+          # Plain trees: leaveDotGit hashes are not reproducible across hosts.
+          source =
+            name: rev: hash:
+            p.fetchFromGitHub {
+              owner = "lambda-symbolics";
+              repo = name;
+              inherit rev hash;
+            };
+          sources = {
+            clinedi = source "clinedi" clinediRev "sha256-zqVfTJ2bJvNZ485wqnhCNDytOZXckIBSBgOY57LScLA=";
+            structlisp = source "structlisp" structlispRev "sha256-PkdOV4vZqdksdKl0Kh3rN+geiO8FF/yjVKUFhY1G78E=";
+            cl-colorist = source "cl-colorist" clColoristRev "sha256-UhQnhWYyX+VYhYbiLCMfw3vutdNyWn/CJj2xQPKYcAM=";
+            colorlisp = source "colorlisp" colorlispRev "sha256-P8zoiBaNyZpR9QDJOi3wF/D3BWy3GaPOlz/LPBd4Tyc=";
+            colordiff = source "colordiff" colordiffRev "sha256-lvTWd4kS2/gfja7pUGIxtD4Mr57TJg+7knQU0zAL6pM=";
+          };
+        in
+        p.stdenvNoCC.mkDerivation {
+          pname = "cclsh-sbcl";
+          inherit version;
+          src = self;
+          dontBuild = true;
+
+          installPhase = ''
+            runHook preInstall
+
+            root="$out/share/cclsh"
+            mkdir -p "$root" "$out/bin"
+            cp -R . "$root/cclsh"
+            ${lib.concatStringsSep "\n" (
+              lib.mapAttrsToList (name: source: ''
+                cp -R ${source} "$root/${name}"
+              '') sources
+            )}
+            patchShebangs "$root/cclsh/scripts/cclsh-sbcl"
+
+            cat >"$out/bin/cclsh" <<EOF
+            #!${p.runtimeShell}
+            set -eu
+            if [ -z "\''${CCLSH_QUICKLISP_SETUP:-}" ] && [ ! -f "\$HOME/quicklisp/setup.lisp" ]; then
+                ql="\''${CCLSH_QUICKLISP_HOME:-\''${XDG_DATA_HOME:-\$HOME/.local/share}/cclsh/quicklisp}"
+                if [ ! -e "\$ql" ]; then
+                    mkdir -p "\$(dirname "\$ql")"
+                    seed=\$(mktemp -d "\$ql.XXXXXX")
+                    cp -R ${template}/. "\$seed/"
+                    chmod -R u+w "\$seed"
+                    # A concurrent first run may win; mv then nests the seed.
+                    mv "\$seed" "\$ql" 2>/dev/null || true
+                    rm -rf "\$seed" "\$ql/\$(basename "\$seed")"
+                fi
+                export CCLSH_QUICKLISP_SETUP="\$ql/setup.lisp"
+            fi
+            export CCLSH_SBCL="\''${CCLSH_SBCL:-${lib.getExe p.sbcl}}"
+            exec "$root/cclsh/scripts/cclsh-sbcl" "\$@"
+            EOF
+            chmod 755 "$out/bin/cclsh"
+
+            runHook postInstall
+          '';
+
+          meta = {
+            description = "System shell running inside Common Lisp (SBCL source launcher)";
+            homepage = "https://github.com/lambda-symbolics/cclsh";
+            license = lib.licenses.isc;
+            mainProgram = "cclsh";
+            platforms = darwinSystems;
+          };
+        };
+
+      sbclLaunchers = lib.genAttrs darwinSystems sbclLauncherFor;
+
       releaseArtifact = pkgs.runCommand
         "cclsh-${version}-linux-x86_64-release"
         {
@@ -396,17 +487,31 @@
         '';
     in
     {
-      packages.${system} = {
-        default = cclsh;
-        cclsh = cclsh;
-        patched-ccl = patchedCcl;
-        release-artifact = releaseArtifact;
-      };
+      packages = {
+        ${system} = {
+          default = cclsh;
+          cclsh = cclsh;
+          patched-ccl = patchedCcl;
+          release-artifact = releaseArtifact;
+        };
+      }
+      // lib.mapAttrs (_: launcher: {
+        default = launcher;
+        cclsh-sbcl = launcher;
+      }) sbclLaunchers;
 
-      apps.${system}.default = {
-        type = "app";
-        program = "${lib.getExe cclsh}";
-      };
+      apps = {
+        ${system}.default = {
+          type = "app";
+          program = "${lib.getExe cclsh}";
+        };
+      }
+      // lib.mapAttrs (_: launcher: {
+        default = {
+          type = "app";
+          program = "${lib.getExe launcher}";
+        };
+      }) sbclLaunchers;
 
       checks.${system} = {
         ccl-patch-provenance = cclPatchProvenance;
