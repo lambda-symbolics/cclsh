@@ -418,6 +418,7 @@
                 export CCLSH_QUICKLISP_SETUP="\$ql/setup.lisp"
             fi
             export CCLSH_SBCL="\''${CCLSH_SBCL:-${lib.getExe p.sbcl}}"
+            export CCLSH_FASL_CACHE="\''${CCLSH_FASL_CACHE:-\''${XDG_CACHE_HOME:-\$HOME/.cache}/cclsh/fasl/${builtins.baseNameOf p.sbcl}}"
             exec "$root/cclsh/scripts/cclsh-sbcl" "\$@"
             EOF
             chmod 755 "$out/bin/cclsh"
