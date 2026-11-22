@@ -11,6 +11,16 @@
 
 (in-package #:cclsh-sbcl-launcher)
 
+;;; Two SBCL builds of the same version (e.g. Nix and Homebrew) share ASDF's
+;;; default cache directory but not fasl features.  A packaged launcher names
+;;; its own cache before Quicklisp compiles anything.
+(let ((cache (uiop:getenv "CCLSH_FASL_CACHE")))
+  (when (and cache (plusp (length cache)))
+    (asdf:initialize-output-translations
+     `(:output-translations
+       (t (,(uiop:ensure-directory-pathname cache) :implementation))
+       :ignore-inherited-configuration))))
+
 (defparameter *checkout-directory*
   (uiop:pathname-parent-directory-pathname
    (uiop:pathname-directory-pathname

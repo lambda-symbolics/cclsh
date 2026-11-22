@@ -86,6 +86,21 @@ and safe mode do not execute them.
 
 * Run from source
 
+** Nix on macOS
+
+The flake also packages the SBCL source launcher for =aarch64-darwin= and
+=x86_64-darwin=, with SBCL and the locked sibling sources included:
+
+#+begin_src sh
+nix run github:lambda-symbolics/cclsh
+nix profile install github:lambda-symbolics/cclsh
+#+end_src
+
+Without =~/quicklisp= or =CCLSH_QUICKLISP_SETUP=, the first run copies the
+packaged Quicklisp client to the same data directory saved images use, then
+Quicklisp downloads the SBCL host libraries once. The limits of the SBCL
+launcher below apply.
+
 ** SBCL on macOS or Linux
 
 The =scripts/cclsh-sbcl= launcher runs the checkout with SBCL. It uses

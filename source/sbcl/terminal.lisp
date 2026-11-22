@@ -13,8 +13,6 @@
 (cffi:defcfun ("kill" terminal--kill) :int (process :int) (signal :int))
 (cffi:defcfun ("signal" terminal--signal) :pointer
   (signal :int) (disposition :pointer))
-(cffi:defcfun ("ioctl" terminal--ioctl) :int
-  (descriptor :int) (request :unsigned-long) (argument :pointer))
 
 (defconstant +winsize-ioctl+
   #+(or darwin netbsd freebsd openbsd) #x40087468
@@ -174,14 +172,22 @@
   (values))
 
 (defun terminal-size ()
-  "Return terminal rows and columns, defaulting to 24 by 80."
-  (cffi:with-foreign-object (winsize :unsigned-short 4)
-    (if (zerop (terminal--ioctl *shell-input-fd* +winsize-ioctl+ winsize))
-        (let ((rows (cffi:mem-aref winsize :unsigned-short 0))
-              (columns (cffi:mem-aref winsize :unsigned-short 1)))
-          (values (if (plusp rows) rows 24)
-                  (if (plusp columns) columns 80)))
-        (values 24 80))))
+  "Return terminal rows and columns, defaulting to 24 by 80.
+IOCTL is variadic.  SB-POSIX declares its argument as variadic; a fixed
+three-argument binding passes it in a register, while Apple arm64 reads
+variadic arguments from the stack, so the kernel wrote the window size
+through a stale pointer (it overwrote HOME and PATH in the environment)."
+  (sb-alien:with-alien ((winsize (array sb-alien:unsigned-short 4)))
+    (handler-case
+        (progn
+          (sb-posix:ioctl *shell-input-fd* +winsize-ioctl+
+                          (sb-alien:addr (sb-alien:deref winsize 0)))
+          (let ((rows (sb-alien:deref winsize 0))
+                (columns (sb-alien:deref winsize 1)))
+            (values (if (plusp rows) rows 24)
+                    (if (plusp columns) columns 80))))
+      (sb-posix:syscall-error ()
+        (values 24 80)))))
 
 (defun terminal--signal-disposition (signal disposition)
   "Set SIGNAL's disposition to the libc signal pointer DISPOSITION."
