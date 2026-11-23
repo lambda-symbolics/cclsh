@@ -2532,6 +2532,21 @@
   (check-equal "edit returns a failing editor status without diffing"
                17
                (cclsh:edit #'check-edit-fixture)))
+;; terminal-fresh-line leaves the stream at the terminal width followed by a
+;; carriage return. A pretty-printed result must still start at column 0.
+(check-equal "lisp results print from column 0 after a carriage return"
+             "(CTRL SHIFT \"a fairly long string here\")"
+             (let ((output
+                     (with-output-to-string (stream)
+                       (write-string (make-string 150 :initial-element #\Space) stream)
+                       (write-char #\Return stream)
+                       (let ((*print-pretty* t))
+                         (cclsh::dispatch--print-values
+                          (list (list 'ctrl 'shift "a fairly long string here"))
+                          stream)))))
+               (string-trim '(#\Space #\Return #\Newline)
+                            (subseq output (1+ (position #\Return output))))))
+
 ;;;; -- Result --
 
 (cond (*check-failures*
