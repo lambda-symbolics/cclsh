@@ -66,11 +66,18 @@
                     **  *
                     *   (first values))
               (terminal-fresh-line)
-              (dolist (value values)
-                (format t "~s~%" value))))))
+              (dispatch--print-values values)))))
     (serious-condition (condition)
       (dispatch-report-error condition)
       1)))
+
+(defun dispatch--print-values (values &optional (stream *standard-output*))
+  "Print each of VALUES readably on its own line of STREAM.
+terminal-fresh-line ends with a carriage return, which does not reset the
+stream's column; printing each value to a fresh string first keeps a
+pretty-printed result from wrapping as if it began at the right edge."
+  (dolist (value values)
+    (write-line (prin1-to-string value) stream)))
 
 (defun dispatch--lone-value-status (line)
   "REPL fallback once command resolution has failed: a lone word that
